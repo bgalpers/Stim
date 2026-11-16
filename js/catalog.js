@@ -55,16 +55,22 @@ export const CHALLENGES = [
 export const byId = id => CHALLENGES.find(c => c.id === id);
 const round5 = n => Math.max(5, Math.round(n / 5) * 5);
 
-/** Apply the effort setting. Returns a copy with concrete targets. */
-export function scaled(ch, effort = 1) {
+/** Concrete targets. Exercises scale by `mult` (the difficulty picked for that exercise); mind challenges by `effort`. */
+export function scaled(ch, effort = 1, mult = 1) {
   const c = { ...ch };
-  if (ch.type === "move") c.stations = ch.stations.map(s => (s.rest ? s : s.reps ? { ...s, reps: round5(s.reps * effort) } : { ...s, s: round5(s.s * effort) }));
+  if (ch.type === "move") c.stations = ch.stations.map(s => (s.rest ? s : s.reps ? { ...s, reps: round5(s.reps * mult) } : { ...s, s: round5(s.s * mult) }));
   if (ch.type === "breath") c.seconds = Math.round(ch.seconds * effort / 16) * 16;
   if (ch.type === "journal") c.words = round5(ch.words * effort);
   if (ch.type === "math") c.count = round5(ch.count * effort);
   if (ch.type === "memory") c.rounds = Math.max(4, Math.round(ch.rounds * (0.6 + 0.4 * effort)));
-  c.estMin = ch.type === "feed" ? ch.est : Math.max(2, Math.round(ch.est * (0.4 + 0.6 * effort)));
+  const k = ch.type === "move" ? mult : effort;
+  c.estMin = ch.type === "feed" ? ch.est : Math.max(1, Math.round(ch.est * (0.35 + 0.65 * k)));
   return c;
+}
+/** The number a custom difficulty adjusts: reps or seconds for single-move challenges, null for mixed circuits. */
+export function primary(ch) {
+  const work = ch.stations.filter(s => !s.rest), same = work.every(s => s.pose === work[0].pose && !s.label);
+  return same ? { base: work[0].reps || work[0].s, unit: work[0].reps ? "reps" : work.length > 1 ? "sec each" : "sec" } : null;
 }
 export const stationLabel = s => (s.rest ? "Rest" : s.label || MODES[s.pose].name);
 export function summary(ch) {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as S from "../js/store.js";
-import { CHALLENGES, CATS, scaled, byId, summary, PROMPTS } from "../js/catalog.js";
+import { CHALLENGES, CATS, scaled, byId, summary, primary, PROMPTS } from "../js/catalog.js";
 import { COURSES, wordCount } from "../content/courses.js";
 import { buildBriefing, buildOnThisDay, strip } from "../js/news.js";
 import { makeTracker, MODES } from "../js/pose.js";
@@ -9,7 +9,7 @@ import { makeTracker, MODES } from "../js/pose.js";
 const MIN = 60_000, DAY = 86_400_000;
 const T0 = new Date(2026, 10, 16, 13, 0).getTime();   // Mon 16 Nov 2026, 1 PM local
 const fresh = () => S.merge(null);
-const win = (s, t, id = "pushups", bonus = 0) => S.grant(s, { id, cat: "move", title: id, bonus }, t);
+const win = (s, t, id = "pushups", bonus = 0, takeMin) => S.grant(s, { id, cat: "move", title: id, bonus, takeMin }, t);
 
 test("a challenge earns one session and the clock runs down", () => {
   const s = fresh();
@@ -63,17 +63,46 @@ test("a skip unlocks time but earns no XP and no streak", () => {
   assert.equal(S.streak(s, T0 + DAY), 0);
 });
 
-test("XP, levels, daily count and day history", () => {
+test("the slider trades app time for XP", () => {
   const s = fresh();
-  assert.equal(win(s, T0).xp, 10);
-  assert.equal(win(s, T0 + MIN, "squats", 5).xp, 15);
-  assert.equal(win(s, T0 + 2 * MIN, "squats", 99).xp, 15, "bonus is capped");
-  assert.deepEqual(S.level(s), { xp: 40, level: 1, into: 40, need: 100 });
-  for (let i = 0; i < 6; i++) win(s, T0 - DAY + i * MIN);
-  assert.equal(S.level(s).level, 2);
-  assert.equal(S.doneCountToday(s, T0 + 3 * MIN), 3);
+  assert.equal(win(s, T0).xp, 0, "taking the full 30 minutes leaves no XP");
+  const half = win(s, T0 + MIN, "squats", 0, 15);
+  assert.equal(half.min, 15); assert.equal(half.xp, 10, "half the time, half the XP");
+  const none = win(s, T0 + 2 * MIN, "squats", 5, 0);
+  assert.equal(none.min, 0); assert.equal(none.xp, 25, "no time: full XP plus bonus");
+  assert.equal(S.remainingMs(s, T0 + 2 * MIN), 43 * MIN);
+  assert.equal(win(s, T0 + 3 * MIN, "x", 0, 999).min, 18, "can't take more than is on offer");
+  assert.equal(S.xpFor(s, 0, { scale: 1.6 }), 32); assert.equal(S.xpFor(s, 0, { scale: 0.4 }), 8);
+  assert.equal(S.xpFor(s, 0, { bonus: 99, scale: 9 }), 50, "bonus and scale are capped");
+});
+
+test("levels, spendable XP, buying items, day history", () => {
+  const s = fresh();
+  for (let i = 0; i < 6; i++) win(s, T0 - DAY + i * MIN, "pushups", 0, 0);
+  assert.deepEqual(S.level(s), { xp: 120, level: 2, into: 20, need: 100 });
+  assert.equal(S.buy(s, "crown", 400), false); assert.equal(S.coins(s), 120);
+  assert.equal(S.buy(s, "glasses", 60), true); assert.equal(S.coins(s), 60);
+  assert.equal(S.buy(s, "glasses", 60), true, "already owned costs nothing"); assert.equal(S.coins(s), 60);
+  assert.equal(S.level(s).xp, 120, "spending doesn't lower your level");
+  win(s, T0, "a", 0, 0); win(s, T0 + MIN, "b", 0, 0);
+  assert.equal(S.doneCountToday(s, T0 + 3 * MIN), 2);
   const d = S.days(s, 7, T0 + 3 * MIN);
-  assert.equal(d.length, 7); assert.equal(d[6].count, 3); assert.equal(d[5].count, 6); assert.equal(d[0].count, 0);
+  assert.equal(d[6].count, 2); assert.equal(d[5].count, 6); assert.equal(d[0].count, 0);
+  const again = S.merge(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(again.owned, ["glasses"]); assert.equal(again.spent, 60);
+});
+
+test("exercise difficulty: easy 10, medium 25, hard 40, or custom", () => {
+  const s = fresh(), reps = id => { const l = S.moveLevel(s, id); return scaled(byId(id), 1, l.mult).stations[0].reps; };
+  assert.equal(reps("pushups"), 25);
+  s.settings.diff.pushups = { mode: "easy" }; assert.equal(reps("pushups"), 10);
+  s.settings.diff.pushups = { mode: "hard" }; assert.equal(reps("pushups"), 40);
+  s.settings.diff.pushups = { mode: "custom", mult: 60 / 25 }; assert.equal(reps("pushups"), 60);
+  assert.equal(reps("squats"), 50, "other exercises keep the default");
+  s.settings.moveDefault = "easy"; assert.equal(reps("squats"), 20);
+  assert.deepEqual(primary(byId("pushups")), { base: 25, unit: "reps" });
+  assert.deepEqual(primary(byId("plank")), { base: 40, unit: "sec each" });
+  assert.equal(primary(byId("fullbody")), null);
 });
 
 test("the day rolls over at the reset hour, not midnight", () => {
@@ -92,13 +121,13 @@ test("catalogue: every exercise has a camera pose, effort scales, estimates are 
     assert.equal(!!st.reps, m.kind === "rep", `${c.id}: ${st.pose} is a ${m.kind}`);
   }
   assert.equal(scaled(byId("pushups"), 1).stations[0].reps, 25);
-  assert.equal(scaled(byId("pushups"), 2).stations[0].reps, 50);
-  const plank = scaled(byId("plank"), 2).stations;
+  assert.equal(scaled(byId("pushups"), 1, 2).stations[0].reps, 50);
+  const plank = scaled(byId("plank"), 1, 2).stations;
   assert.equal(plank[0].s, 80); assert.equal(plank[1].rest, 20, "rests don't scale");
   assert.equal(summary(scaled(byId("plank"), 1)), "3 × 40 sec");
   assert.equal(summary(scaled(byId("fullbody"), 1)), "5 stations");
   assert.equal(scaled(byId("breathing"), 1).seconds % 16, 0);
-  for (const c of CHALLENGES) { assert.ok(CATS[c.cat], c.id); assert.ok(c.icon, c.id); const m = scaled(c, 1).estMin; assert.ok(m >= 2 && m <= 8, `${c.id} est ${m}`); }
+  for (const c of CHALLENGES) { assert.ok(CATS[c.cat], c.id); assert.ok(c.icon, c.id); const m = scaled(c, 1).estMin; assert.ok(m >= 1 && m <= 8, `${c.id} est ${m}`); }
   for (const c of CHALLENGES.filter(x => x.type === "journal")) assert.ok(PROMPTS[c.prompts].length, c.id);
 });
 

@@ -1,5 +1,7 @@
 import * as S from "./store.js";
-import { CATS, CHALLENGES, byId, scaled, summary, stationLabel, PROMPTS } from "./catalog.js";
+import { CATS, CHALLENGES, byId, scaled, summary, stationLabel, primary, PROMPTS } from "./catalog.js";
+import { buddy, COLORS, EYES, SLOTS, ITEMS, itemById, titleFor } from "./buddy.js";
+import * as Social from "./social.js";
 import { COURSES, courseById, findLesson } from "../content/courses.js";
 import * as News from "./news.js";
 
@@ -109,7 +111,7 @@ const shortcutUrl = (min = Math.ceil(S.remainingMs(state) / 60000)) =>
 const openAppsBtn = (cls = "white") => state.settings.useShortcut && S.isOpen(state)
   ? `<a class="btn ${cls}" href="${esc(shortcutUrl())}">Open my apps</a>` : "";
 const flame = n => `<span class="stat flame${n ? " lit" : ""}" title="${plural(n, "day")} streak"><i>🔥</i><b class="num">${n}</b></span>`;
-const xpChip = () => { const l = S.level(state); return `<span class="stat xp" title="${l.xp} XP"><i>${BOLT}</i><b class="num">${l.xp}</b></span>`; };
+const xpChip = () => `<span class="stat xp" title="XP to spend"><i>${BOLT}</i><b class="num">${S.coins(state)}</b></span>`;
 const timeChip = () => { const o = S.isOpen(state); return `<span class="stat time${o ? " open" : ""}" data-timechip><i>${o ? "🔓" : "🔒"}</i><b class="num" data-clock>${o ? fmtClock(S.remainingMs(state)) : "Locked"}</b></span>`; };
 const statsBar = title => `<header class="top"><div class="brand">${title ? esc(title) : `<span class="logo">${BOLT}</span>Stim`}</div><div class="stats">${flame(S.streak(state))}${xpChip()}${timeChip()}</div></header>`;
 const backBar = (label, href = "#/") => `<header class="bar"><a class="xbtn" href="${href}" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><span class="bar-title">${esc(label)}</span>${timeChip()}</header>`;
@@ -118,7 +120,7 @@ const setFlowBar = p => { const i = $(".flowbar .pbar i"); if (i) i.style.width 
 
 function earnLine() {
   const g = S.nextGrant(state);
-  return g > 0 ? `Earns ${fmtMin(g)} of app time` : "Counts for your streak and XP. No time added right now";
+  return g > 0 ? `Earns up to ${fmtMin(g)} of app time, or XP` : "Your bank is full, so this one pays out in XP";
 }
 function goalPips() {
   const n = S.doneCountToday(state), g = state.settings.goalPerDay;
@@ -135,14 +137,14 @@ function lessonItem(course) {
   return { key: l.id, cat: "learn", icon: course.icon, href: `#/lesson/${l.id}`, title: l.title, sub: `${course.tag} · ${review ? "Review" : `Lesson ${i + 1} of ${course.lessons.length}`}` };
 }
 function challengeItem(c) {
-  const ch = scaled(c, state.settings.effort), done = c.daily && S.doneToday(state, c.id);
+  const ch = scaled(c, state.settings.effort, S.moveLevel(state, c.id).mult), done = c.daily && S.doneToday(state, c.id);
   const what = ch.type === "move" ? summary(ch) : ch.type === "breath" ? "Guided" : ch.type === "journal" ? `${ch.words} words` : ch.type === "math" ? `${ch.count} problems` : ch.type === "memory" ? `${ch.rounds} rounds` : "Read + quiz";
   return { key: c.id, cat: c.cat, icon: c.icon, href: `#/do/${c.id}`, title: c.title, sub: done ? "Done today" : `${what} · ~${ch.estMin} min`, done };
 }
 function candidates(cat, includeDone = false) {
   if (!state.settings.cats[cat]) return [];
   if (cat === "learn") return COURSES.filter(c => state.courses.enrolled.includes(c.id)).map(lessonItem).filter(Boolean);
-  return CHALLENGES.filter(c => c.cat === cat && !state.settings.off[c.id]).map(challengeItem).filter(i => includeDone || !i.done);
+  return CHALLENGES.filter(c => c.cat === cat && (includeDone || !state.settings.off[c.id])).map(challengeItem).filter(i => includeDone || !i.done);
 }
 let shuffleN = 0;
 function suggestions() {
@@ -154,7 +156,7 @@ const card = (it, i = 0) => `<a class="ch cat-${it.cat}${it.done ? " is-done" : 
 // ---------- router ----------
 let acts = {}, cleanup = [], token = 0, last = null;
 const onLeave = fn => cleanup.push(fn);
-const TAB = { "": "home", all: "home", learn: "learn", course: "learn", progress: "progress", settings: "settings" };
+const TAB = { "": "home", all: "home", learn: "learn", course: "learn", progress: "me", me: "me", buddy: "me", friends: "friends", settings: "settings" };
 
 function route() {
   cleanup.splice(0).forEach(f => { try { f(); } catch {} });
@@ -191,7 +193,7 @@ function home() {
   const now = Date.now(), open = S.isOpen(state, now), g = S.nextGrant(state, now), x = state.settings, left = S.remainingMs(state, now);
   const sug = suggestions();
   const note = g === 0
-    ? `<p class="note">${S.capLeft(state, now) === 0 ? `You've used today's ${fmtMin(x.dailyCapMin)} limit.` : `Your bank is full at ${fmtMin(x.maxBankMin)}.`} Challenges still count for your streak and XP.</p>`
+    ? `<p class="note">${S.capLeft(state, now) === 0 ? `You've used today's ${fmtMin(x.dailyCapMin)} limit.` : `Your bank is full at ${fmtMin(x.maxBankMin)}.`} Challenges now pay out in XP for your character.</p>`
     : g < x.sessionMin ? `<p class="note">The next challenge adds ${fmtMin(g)}, which takes you to your limit.</p>` : "";
   draw(`${statsBar()}
     <section class="hero${open ? " is-open" : ""}">
@@ -212,11 +214,17 @@ function home() {
 }
 
 function all() {
+  const row = (it, i) => it.cat === "learn" ? card(it, i)
+    : `<div class="chrow" style="--i:${i}">${card(it)}<button class="star${state.settings.off[it.key] ? "" : " on"}" type="button" data-act="pickch" data-id="${it.key}" aria-pressed="${!state.settings.off[it.key]}" aria-label="In my shuffle">${state.settings.off[it.key] ? "☆" : "★"}</button></div>`;
   const groups = Object.keys(CATS).map(cat => {
     const items = candidates(cat, true);
-    return items.length ? `<h3 class="grp">${CATS[cat].icon} ${CATS[cat].name}<small>${items.length}</small></h3><div class="list deal">${items.map(card).join("")}</div>` : "";
+    return items.length ? `<h3 class="grp">${CATS[cat].icon} ${CATS[cat].name}<small>${items.length}</small></h3><div class="list deal">${items.map(row).join("")}</div>` : "";
   }).join("");
-  draw(`${backBar("All challenges")}<p class="sub">${earnLine()}. Lessons show the next one from each course in your shuffle; open Learn for the rest.</p>${groups || `<p class="empty">Everything is switched off. Turn something on in Settings.</p>`}`);
+  draw(`${backBar("All challenges")}<p class="sub">Tap any challenge to do it now. ★ means it can come up in your shuffle; tap the star to take it out. Courses are starred in Learn.</p>${groups || `<p class="empty">Every category is switched off. Turn one on in Settings.</p>`}`);
+  acts.pickch = el => {
+    const id = el.dataset.id; state.settings.off[id] ? delete state.settings.off[id] : (state.settings.off[id] = true); persist();
+    const on = !state.settings.off[id]; el.textContent = on ? "★" : "☆"; el.classList.toggle("on", on); el.setAttribute("aria-pressed", on); pop(el); beep(on ? 880 : 500, 0.05, 0.08);
+  };
 }
 
 // keep clocks and the lock state current
@@ -235,33 +243,68 @@ setInterval(() => {
 }, 1000);
 
 // ---------- finishing ----------
-function complete({ id, cat, title, detail = "", started, bonus = 0, reps, after }) {
-  const before = S.level(state), streakBefore = S.streak(state), goalBefore = S.doneCountToday(state);
-  const entry = S.grant(state, { id, cat, title, kind: "done", spentMs: started ? Date.now() - started : 0, detail, bonus });
+// A finished challenge is held as "pending" until you choose how to take the reward:
+// app time, XP, or a mix. Leaving the screen claims it at the slider's current position.
+let pending = null;
+function complete({ id, cat, title, detail = "", started, bonus = 0, scale = 1, reps, after }) {
   for (const [k, n] of Object.entries(reps || {})) state.totals[k] = (state.totals[k] || 0) + n;
   after?.();
+  persist(); keepAwake(false);
+  pending = { id, cat, title, detail, bonus, scale, spentMs: started ? Date.now() - started : 0 };
+  go("#/done");
+}
+function claim(takeMin) {
+  const p = pending; if (!p) return; pending = null;
+  const before = S.level(state), streakBefore = S.streak(state), goalBefore = S.doneCountToday(state), offer = S.nextGrant(state);
+  const entry = S.grant(state, { ...p, kind: "done", takeMin });
+  if (offer > 0) state.settings.take = entry.min / offer;
   persist(); wasOpen = S.isOpen(state);
   last = { entry, before, streakBefore, goalBefore };
-  keepAwake(false);
-  go("#/done");
+  syncSocial();
 }
 
 function done() {
+  if (pending) {
+    const offer = S.nextGrant(state), p = pending;
+    if (offer === 0) claim(0);
+    else {
+      const step = offer % 5 === 0 ? 5 : 1; let take = Math.round(state.settings.take * offer / step) * step;
+      const xpAt = t => S.xpFor(state, t, p);
+      draw(`<div class="done-icon">${buddy(state.me)}</div>
+        <p class="eyebrow">Challenge complete</p><h1 class="title center">${esc(p.title)}</h1>
+        <p class="sub center">Take it as app time, as XP, or split it. Less scrolling, more XP.</p>
+        <div class="split">
+          <div class="tile t-time"><small>App time</small><b class="num" id="cMin"></b></div>
+          <div class="tile t-xp"><small>XP</small><b class="num" id="cXp"></b></div>
+        </div>
+        <input type="range" class="slider" id="take" min="0" max="${offer}" step="${step}" value="${take}" aria-label="Minutes of app time to take">
+        <div class="row mini"><span>⚡ All XP</span><span>All time 🔓</span></div>
+        <div class="stack"><button class="btn primary" type="button" data-act="claim">Claim</button></div>`, "donepage claimpage");
+      const sl = $("#take"), upd = () => { take = +sl.value; $("#cMin").textContent = `${take} min`; $("#cXp").textContent = `+${xpAt(take)}`; sl.style.setProperty("--p", take / offer * 100 + "%"); };
+      sl.oninput = () => { upd(); beep(500 + take * 8, 0.02, 0.04); }; upd();
+      onLeave(() => claim(take));
+      acts.claim = () => { claim(take); showResult(); };
+      return;
+    }
+  }
+  showResult();
+}
+function showResult() {
   if (!last) return go("#/");
   const e = last.entry, skip = e.kind === "skip", st = S.streak(state), lv = S.level(state), g = state.settings.goalPerDay, n = S.doneCountToday(state);
   const levelUp = !skip && lv.level > last.before.level, goalHit = !skip && last.goalBefore < g && n >= g;
-  const why = e.min ? "" : S.capLeft(state) === 0 ? `You're at today's ${fmtMin(state.settings.dailyCapMin)} limit, so no time was added.` : `Your bank is full at ${fmtMin(state.settings.maxBankMin)}, so no time was added.`;
-  draw(`<div class="done-icon${skip ? " skip" : ""}">${skip ? "⏭️" : levelUp ? "🏆" : goalHit ? "🎯" : "⚡"}</div>
-    <p class="eyebrow">${skip ? "Skipped" : levelUp ? `Level ${lv.level}!` : goalHit ? "Daily goal hit" : "Challenge complete"}</p>
-    <h1 class="mega">${e.min ? `<span data-count="${e.min}" data-pre="+">+0</span> min` : skip ? "No time" : "Logged"}</h1>
+  const why = e.min || skip ? "" : S.nextGrant(state) > 0 ? "You took it all as XP." : S.capLeft(state) === 0 ? `You're at today's ${fmtMin(state.settings.dailyCapMin)} limit, so it all went to XP.` : `Your bank is full at ${fmtMin(state.settings.maxBankMin)}, so it all went to XP.`;
+  draw(`<div class="done-icon${skip ? " skip" : ""}">${skip ? "⏭️" : buddy(state.me, "cheer")}</div>
+    <p class="eyebrow">${skip ? "Skipped" : levelUp ? `Level ${lv.level}! You're a ${titleFor(lv.level)}` : goalHit ? "Daily goal hit" : "Claimed"}</p>
+    <h1 class="mega">${e.min ? `<span data-count="${e.min}" data-pre="+">+0</span> min` : skip ? "No time" : `<span data-count="${e.xp}" data-pre="+">+0</span> XP`}</h1>
     <p class="sub center">${skip ? "Skips don't count for your streak." : `${esc(e.title)}${e.detail ? ` · ${esc(e.detail)}` : ""}. ${why}`}</p>
     <div class="tiles three rise">
       <div class="tile t-xp" style="--i:0"><small>XP</small><b class="num" data-count="${e.xp || 0}" data-pre="+">+0</b></div>
       <div class="tile t-streak" style="--i:1"><small>Streak</small><b class="num"><span data-count="${st}" data-from="${skip ? st : last.streakBefore}">${st}</span> 🔥</b></div>
       <div class="tile t-time" style="--i:2"><small>App time</small><b class="num" data-clock>${fmtClock(S.remainingMs(state))}</b></div>
     </div>
-    ${skip ? "" : `<div class="lvl card pad"><div class="row"><b>Level ${lv.level}</b><span class="num mini">${lv.into} / ${lv.need} XP</span></div><div class="pbar big"><i style="width:${levelUp ? 0 : last.before.into}%" data-w="${lv.into}"></i></div></div>${goalPips()}`}
-    <div class="stack">${openAppsBtn("primary")}<a class="btn ${S.isOpen(state) && state.settings.useShortcut ? "outline" : "primary"}" href="#/">${S.nextGrant(state) > 0 ? "Do another to bank more" : "Back to Stim"}</a></div>`, `donepage${skip ? " is-skip" : ""}`);
+    ${skip ? "" : `<div class="lvl card pad"><div class="row"><b>Level ${lv.level} · ${titleFor(lv.level)}</b><span class="num mini">${lv.into} / ${lv.need} XP</span></div><div class="pbar big"><i style="width:${levelUp ? 0 : last.before.into}%" data-w="${lv.into}"></i></div></div>${goalPips()}`}
+    <div class="stack">${openAppsBtn("primary")}<a class="btn ${S.isOpen(state) && state.settings.useShortcut ? "outline" : "primary"}" href="#/">${S.isOpen(state) ? "Do another for more XP" : "Back to Stim"}</a></div>`, `donepage${skip ? " is-skip" : ""}`);
   if (!skip) { fanfare(); confetti(); }
 }
 
@@ -299,14 +342,24 @@ $("#sheetYes").onclick = () => {
 function doChallenge(id) {
   const base = byId(id);
   if (!base) return go("#/");
+  if (base.type === "move") return moveView(base);
   const ch = scaled(base, state.settings.effort);
-  ({ move: moveView, breath: breathView, journal: journalView, math: mathView, memory: memoryView, feed: feedView })[ch.type](ch);
+  ({ breath: breathView, journal: journalView, math: mathView, memory: memoryView, feed: feedView })[ch.type](ch);
 }
 const intro = (ch, extra = "") => `${backBar(CATS[ch.cat].name)}<div class="hello cat-${ch.cat}"><span class="bigico">${ch.icon}</span><h1 class="title">${esc(ch.title)}</h1><p class="sub center">${earnLine()}</p></div>${extra}`;
 
 // Move: a list of camera stations (reps, holds, rests). Falls back to tap/timer if the camera can't be used.
-function moveView(ch) {
-  const st = ch.stations, work = st.filter(s => !s.rest), stage = $("#stage");
+function moveView(base) {
+  const stage = $("#stage"), prim = primary(base), r5 = n => Math.max(5, Math.round(n / 5) * 5);
+  let lvl, ch, st, work;
+  const rebuild = () => { lvl = S.moveLevel(state, base.id); ch = scaled(base, 1, lvl.mult); st = ch.stations; work = st.filter(s => !s.rest); };
+  rebuild();
+  const picker = () => {
+    const lab = m => (prim ? ` · ${r5(prim.base * S.DIFF[m])}` : "");
+    return `<div class="seg four" role="group" aria-label="Difficulty">${[["easy", "Easy"], ["med", "Medium"], ["hard", "Hard"]].map(([m, l]) => `<button type="button" data-act="lvl" data-m="${m}" class="${lvl.mode === m ? "on" : ""}">${l}<small>${lab(m).replace(" · ", "")}</small></button>`).join("")}<button type="button" data-act="lvl" data-m="custom" class="${lvl.mode === "custom" ? "on" : ""}">Custom<small>${lvl.mode === "custom" ? (prim ? r5(prim.base * lvl.mult) : "×" + lvl.mult.toFixed(1)) : "…"}</small></button></div>
+      ${lvl.mode === "custom" ? `<div class="setrow card"><div><b>${prim ? `Your number` : "Your multiplier"}</b><small>${prim ? prim.unit : "applies to every station"}</small></div><div class="stepper"><button type="button" data-act="cstep" data-d="-1" aria-label="Less">−</button><output>${prim ? r5(prim.base * lvl.mult) : "×" + lvl.mult.toFixed(1)}</output><button type="button" data-act="cstep" data-d="1" aria-label="More">+</button></div></div>` : ""}
+      <p class="mini center">Up to ${S.xpFor(state, 0, { bonus: 5, scale: lvl.mult })} XP at this difficulty</p>`;
+  };
   const canCam = !!(state.settings.camera && navigator.mediaDevices?.getUserMedia);
   let i = 0, n = 0, heldMs = 0, restMs = 0, started = 0, mode = "intro", cam = null, MODES = null, holding = false, lastTap = 0, finished = false;
   const reps = {};
@@ -316,6 +369,7 @@ function moveView(ch) {
   const target = s => (s.reps ? `× ${s.reps}` : s.rest ? `${s.rest}s` : `${s.s}s`);
 
   const paintIntro = (err = "") => draw(intro(ch, `
+    ${picker()}
     <ol class="stations">${st.map(s => `<li class="${s.rest ? "rest" : ""}"><span>${esc(stationLabel(s))}</span><b class="num">${target(s)}</b></li>`).join("")}</ol>
     <div class="tipbox"><b>📱 Set up</b><p>${esc(MODESetup(ch))}${ch.tip ? " " + esc(ch.tip) : ""}</p></div>
     ${err ? `<p class="err">${esc(err)}</p>` : ""}
@@ -335,7 +389,7 @@ function moveView(ch) {
   };
   const finish = () => {
     if (finished) return; finished = true; stopCam();
-    complete({ id: ch.id, cat: ch.cat, title: ch.title, detail: summary(ch) + (mode === "cam" ? "" : " · no camera"), started, reps, bonus: mode === "cam" ? 5 : 0 });
+    complete({ id: ch.id, cat: ch.cat, title: ch.title, detail: summary(ch) + (mode === "cam" ? "" : " · no camera"), started, reps, bonus: mode === "cam" ? 5 : 0, scale: lvl.mult });
   };
 
   // ---- camera mode ----
@@ -399,7 +453,14 @@ function moveView(ch) {
   const goManual = () => { stopCam(); mode = "manual"; started ||= Date.now(); ticker ||= setInterval(tick, 100); keepAwake(true); paintManual(); };
 
   onLeave(() => { finished = true; stopCam(); clearInterval(ticker); keepAwake(false); });
+  const setLvl = d => { state.settings.diff[base.id] = d; persist(); rebuild(); const y = scrollY; paintIntro(); scrollTo(0, y); };
   Object.assign(acts, {
+    lvl(el) { const m = el.dataset.m; setLvl(m === "custom" ? { mode: "custom", mult: lvl.mult } : { mode: m }); beep(700, 0.04, 0.07); },
+    cstep(el) {
+      const d = +el.dataset.d;
+      const mult = prim ? Math.max(5, Math.min(500, r5(prim.base * lvl.mult) + d * 5)) / prim.base : Math.max(0.3, Math.min(4, Math.round((lvl.mult + d * 0.1) * 10) / 10));
+      setLvl({ mode: "custom", mult });
+    },
     manual: goManual,
     tap() {
       const t = performance.now(), s = cur(); if (!s.reps || t - lastTap < 180) return; lastTap = t;
@@ -712,10 +773,12 @@ function progress() {
   const recent = state.log.slice(-12).reverse().map(e => `<li class="${e.kind}"><span class="ico cat-${e.cat}">${e.kind === "skip" ? "⏭️" : CATS[e.cat]?.icon || "⚡"}</span><span class="ch-main"><b>${esc(e.title)}</b><small>${new Date(e.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}${e.detail ? ` · ${esc(e.detail)}` : ""}</small></span><span class="num plus">${e.min ? `+${e.min}m` : "—"}</span></li>`).join("");
   const journal = state.journal.slice(-3).reverse().map(j => `<details class="jentry"><summary>${new Date(j.t).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${esc(j.prompt)}</summary><p>${esc(j.text)}</p></details>`).join("");
   const started = COURSES.filter(c => S.courseProgress(state, c) > 0);
-  draw(`${statsBar("Progress")}
-    <section class="levelcard">
-      ${ring(lv.into / lv.need, `<small>Level</small><b class="num">${lv.level}</b>`, "ring-level")}
-      <div><p class="eyebrow">Total XP</p><div class="hugenum num" data-count="${lv.xp}">0</div><p>${lv.need - lv.into} XP to level ${lv.level + 1}</p></div>
+  draw(`${statsBar("Me")}
+    <section class="levelcard me">
+      <a class="mebuddy" href="#/buddy" aria-label="Customise your character">${buddy(state.me)}</a>
+      <div><p class="eyebrow">Level ${lv.level} · ${titleFor(lv.level)}</p><h1 class="mename">${esc(state.me.name || "Name your character")}</h1>
+        <div class="pbar on-color"><i data-w="${lv.into / lv.need * 100}"></i></div><p class="num">${lv.into} / ${lv.need} XP · <b>${S.coins(state)}</b> to spend</p></div>
+      <a class="btn white" href="#/buddy">Customise</a>
     </section>
     <div class="tiles three rise">
       <div class="tile t-streak" style="--i:0"><small>Streak</small><b class="num"><span data-count="${st.streak}">0</span> 🔥</b></div>
@@ -733,6 +796,128 @@ function progress() {
     ${journal ? `<section class="card pad"><p class="eyebrow">Journal</p>${journal}</section>` : ""}`, "progresspage");
 }
 
+// ---------- Character ----------
+function buddyEdit() {
+  const me = state.me;
+  const paint = (msg = "") => {
+    const y = scrollY;
+    draw(`${backBar("Your character", "#/me")}
+      <div class="buddystage" style="--c:${esc(me.color)}">${buddy(me, "big")}<span class="coins"><i>${BOLT}</i><b class="num">${S.coins(state)}</b> XP to spend</span></div>
+      ${msg ? `<p class="note">${esc(msg)}</p>` : ""}
+      <input type="text" class="text" id="bname" maxlength="24" placeholder="Name your character" value="${esc(me.name)}" autocomplete="off">
+      <h3 class="grp">Colour</h3>
+      <div class="swatches">${COLORS.map(c => `<button type="button" data-act="color" data-c="${c}" class="${me.color === c ? "on" : ""}" style="--c:${c}" aria-label="Colour ${c}"></button>`).join("")}</div>
+      <h3 class="grp">Eyes</h3>
+      <div class="seg" role="group" aria-label="Eyes">${EYES.map(e => `<button type="button" data-act="eyes" data-e="${e}" class="${me.eyes === e ? "on" : ""}">${e[0].toUpperCase() + e.slice(1)}</button>`).join("")}</div>
+      ${Object.entries(SLOTS).map(([slot, label]) => `<h3 class="grp">${label}</h3><div class="shop">${ITEMS.filter(i => i.slot === slot).map(i => {
+        const own = state.owned.includes(i.id), on = me.wear[slot] === i.id, can = S.coins(state) >= i.cost;
+        return `<button type="button" class="item${on ? " on" : ""}${own ? " own" : can ? "" : " locked"}" data-act="item" data-id="${i.id}">${buddy({ color: me.color, eyes: me.eyes, wear: { [slot]: i.id } })}<b>${i.name}</b><small class="num">${on ? "Wearing" : own ? "Owned" : `${i.cost} XP`}</small></button>`;
+      }).join("")}</div>`).join("")}`, "buddypage");
+    scrollTo(0, y);
+    $("#bname").onchange = e => { me.name = e.target.value.trim().slice(0, 24); persist(); };
+  };
+  Object.assign(acts, {
+    color(el) { me.color = el.dataset.c; persist(); paint(); },
+    eyes(el) { me.eyes = el.dataset.e; persist(); paint(); },
+    item(el) {
+      const it = itemById(el.dataset.id);
+      if (state.owned.includes(it.id)) { me.wear[it.slot] === it.id ? delete me.wear[it.slot] : (me.wear[it.slot] = it.id); persist(); beep(700, 0.05, 0.08); return paint(); }
+      if (!S.buy(state, it.id, it.cost)) { bad(); shake(el); return paint(`${it.name} costs ${it.cost} XP. You need ${it.cost - S.coins(state)} more. Take less app time after a challenge to earn XP faster.`); }
+      me.wear[it.slot] = it.id; persist(); good(); confetti(); paint(`${it.name} unlocked.`);
+    },
+  });
+  onLeave(() => { const n = $("#bname"); if (n) me.name = n.value.trim().slice(0, 24); persist(); syncSocial(); });
+  paint();
+}
+
+// ---------- Friends ----------
+const lastDone = () => [...state.log].reverse().find(e => e.kind === "done");
+function myCard(handle = state.social?.handle) {
+  const lv = S.level(state), ld = lastDone();
+  return { handle, name: state.me.name || handle, avatar: { color: state.me.color, eyes: state.me.eyes, wear: state.me.wear }, xp: lv.xp, level: lv.level, streak: S.streak(state),
+    today: S.doneCountToday(state), week: S.stats(state).weekDone, day_key: today(), last_title: ld?.title || null, last_at: ld ? new Date(ld.t).toISOString() : null };
+}
+let lastSync = 0;
+function syncSocial(force = false) {
+  if (!state.social || (!force && Date.now() - lastSync < 3000)) return Promise.resolve();
+  lastSync = Date.now();
+  return Social.save(state.social, myCard()).catch(() => {});
+}
+function ago(iso) {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
+}
+const inviteUrl = () => `https://bgalpers.github.io/Stim/#/friends/${state.social.handle}`;
+
+async function friends(prefill = "") {
+  const my = token;
+  if (!state.social) {
+    draw(`${statsBar("Friends")}
+      <div class="hello"><div class="mebuddy solo">${buddy(state.me)}</div><h1 class="title">Train with friends</h1><p class="sub center">Follow each other and see who's keeping their streak.</p></div>
+      <div class="tipbox"><b>What friends can see</b><p>Your name, handle, character, level, XP, streak, how many challenges you did today and this week, and the name of your last one. Nothing else leaves your phone: no journal, no answers, no app time.</p></div>
+      <label class="field"><span>Display name</span><input type="text" class="text" id="fname" maxlength="24" value="${esc(state.me.name)}" placeholder="Brady" autocomplete="off"></label>
+      <label class="field"><span>Handle</span><input type="text" class="text" id="fhandle" maxlength="16" placeholder="yourhandle" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <p class="err" id="ferr" hidden></p>
+      <div class="stack"><button class="btn primary" type="button" data-act="join">Create my profile</button></div>
+      ${prefill ? `<p class="mini center">Then you can follow @${esc(Social.cleanHandle(prefill))}.</p>` : ""}`, "friendspage");
+    acts.join = async btn => {
+      const h = Social.cleanHandle($("#fhandle").value), name = $("#fname").value.trim().slice(0, 24), err = $("#ferr");
+      if (!Social.validHandle(h)) { err.hidden = false; err.textContent = "Handles are 3–16 letters, numbers or underscores."; return shake($("#fhandle")); }
+      btn.disabled = true; btn.textContent = "Creating…";
+      try { if (name) state.me.name = name; state.social = await Social.save(null, myCard(h)); persist(); good(); if (my === token) friends(prefill); }
+      catch (e) { if (my !== token) return; btn.disabled = false; btn.textContent = "Create my profile"; err.hidden = false; err.textContent = e.message; }
+    };
+    return;
+  }
+  const shell = (body, note = "") => draw(`${statsBar("Friends")}
+    <div class="addrow"><input type="text" class="text" id="addh" placeholder="Add by handle" value="${esc(Social.cleanHandle(prefill))}" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" type="button" data-act="add">Follow</button></div>
+    <p class="${note.startsWith("!") ? "err" : "note"}" id="fnote" ${note ? "" : "hidden"}>${esc(note.replace(/^!/, ""))}</p>
+    ${body}
+    <div class="card pad invite"><b>Invite a friend</b><p class="mini">Send them your link. It opens Stim ready to follow you.</p><code id="inv">${esc(inviteUrl())}</code><button class="chipbtn" type="button" data-act="copy">Copy link</button></div>
+    <button class="link" type="button" data-act="leave">Delete my friends profile</button>`, "friendspage");
+  const note = (t, isErr) => { const n = $("#fnote"); if (!n) return; n.hidden = false; n.className = isErr ? "err" : "note"; n.textContent = t; };
+  const load = async (msg = "") => {
+    shell(`<p class="sub center loading">Loading friends</p>`, msg);
+    let rows;
+    try { await syncSocial(true); rows = await Social.feed(state.social); }
+    catch (e) { if (my === token) shell(`<p class="err">${esc(e.message)}</p><div class="stack"><button class="btn outline" type="button" data-act="reload">Try again</button></div>`); return; }
+    if (my !== token) return;
+    const day = today();
+    rows.forEach(r => (r.todayNow = r.day_key === day ? r.today : 0));
+    rows.sort((a, b) => b.week - a.week || b.xp - a.xp);
+    const others = rows.filter(r => !r.me);
+    shell(`<ol class="board">${rows.map((r, i) => `<li class="frow${r.me ? " me" : ""}" style="--i:${i}">
+        <span class="rank num">${i + 1}</span><span class="fav">${buddy(r.avatar || {})}</span>
+        <span class="fmain"><b>${esc(r.name)}${r.me ? " (you)" : ""}</b><small>@${esc(r.handle)} · Lv ${+r.level} ${esc(titleFor(+r.level || 1))}${r.follows_you && !r.me ? " · follows you" : ""}</small>
+          <small class="fstats num"><span>🔥 ${+r.streak}</span><span>today ${+r.todayNow}</span><span>week ${+r.week}</span><span>${BOLT}${+r.xp}</span></small>
+          ${r.last_title ? `<small class="flast">${esc(r.last_title)} · ${ago(r.last_at)}</small>` : ""}</span>
+        ${r.me ? "" : `<button class="chipbtn${r.following ? " on" : ""}" type="button" data-act="toggle" data-h="${esc(r.handle)}" data-on="${r.following ? 1 : 0}">${r.following ? "Following" : "Follow back"}</button>`}</li>`).join("")}</ol>
+      ${others.length ? `<p class="mini center">Ranked by challenges in the last 7 days.</p>` : `<p class="empty center">No friends yet. Add someone by handle, or send your invite link.</p>`}`, msg);
+  };
+  Object.assign(acts, {
+    reload: () => load(),
+    async add(btn) {
+      const h = Social.cleanHandle($("#addh").value);
+      if (!Social.validHandle(h)) return shake($("#addh"));
+      btn.disabled = true;
+      try { await Social.follow(state.social, h, true); good(); prefill = ""; if (my === token) load(`You're following @${h}.`); }
+      catch (e) { btn.disabled = false; bad(); note(e.message, true); }
+    },
+    async toggle(el) {
+      const on = el.dataset.on !== "1"; el.disabled = true;
+      try { await Social.follow(state.social, el.dataset.h, on); if (my === token) load(on ? `You're following @${el.dataset.h}.` : `Unfollowed @${el.dataset.h}.`); }
+      catch (e) { el.disabled = false; note(e.message, true); }
+    },
+    async copy(el) { try { await navigator.clipboard.writeText(inviteUrl()); el.textContent = "Copied"; } catch { el.textContent = "Select the link above"; } },
+    async leave(el) {
+      if (el.dataset.armed !== "1") { el.dataset.armed = "1"; el.textContent = "Tap again to delete your profile and follows"; return; }
+      try { await Social.leave(state.social); } catch (e) { return note(e.message, true); }
+      state.social = null; persist(); friends();
+    },
+  });
+  load();
+}
+
 // ---------- Settings ----------
 function settings() {
   const x = state.settings;
@@ -748,10 +933,15 @@ function settings() {
       ${stepper("dailyCapMin", "Daily limit", "Total app time you can earn in a day", 15, v => (v ? fmtMin(v) : "Off"))}
       ${stepper("goalPerDay", "Daily goal", "Challenges you aim to finish each day", 1, v => String(v))}
     </section>
-    <h2 class="grp">Effort</h2>
+    <h2 class="grp">Difficulty</h2>
     <section class="card pad">
-      <div class="seg" role="group" aria-label="Effort">${EFF.map(([v, l]) => `<button type="button" data-act="effort" data-v="${v}" class="${x.effort === v ? "on" : ""}">${l}</button>`).join("")}</div>
-      <p class="mini">Right now: ${scaled(byId("pushups"), x.effort).stations[0].reps} push-ups, ${scaled(byId("squats"), x.effort).stations[0].reps} squats, ${scaled(byId("math"), x.effort).count} math problems. Lessons stay the same length.</p>
+      <p class="seglabel">Exercises</p>
+      <div class="seg three" role="group" aria-label="Exercise difficulty">${[["easy", "Easy"], ["med", "Medium"], ["hard", "Hard"]].map(([v, l]) => `<button type="button" data-act="movedef" data-v="${v}" class="${x.moveDefault === v ? "on" : ""}">${l}</button>`).join("")}</div>
+      <p class="mini">${Math.round(25 * S.DIFF[x.moveDefault] / 5) * 5} push-ups, ${Math.round(50 * S.DIFF[x.moveDefault] / 5) * 5} squats by default. Every exercise also has its own Easy / Medium / Hard / Custom picker on its start screen${Object.keys(x.diff).length ? `, and you've set ${Object.keys(x.diff).length} of them` : ""}.</p>
+      ${Object.keys(x.diff).length ? `<button class="link left" type="button" data-act="cleardiff" style="margin-top:0">Reset my per-exercise choices</button>` : ""}
+      <p class="seglabel" style="margin-top:14px">Mind challenges</p>
+      <div class="seg" role="group" aria-label="Mind effort">${EFF.map(([v, l]) => `<button type="button" data-act="effort" data-v="${v}" class="${x.effort === v ? "on" : ""}">${l}</button>`).join("")}</div>
+      <p class="mini">${scaled(byId("math"), x.effort).count} math problems, ${scaled(byId("journal"), x.effort).words} words. Lessons stay the same length.</p>
     </section>
     <h2 class="grp">Kinds of challenge</h2>
     <section class="card">${Object.keys(CATS).map(k => toggle(`cats.${k}`, `${CATS[k].icon} ${CATS[k].name}`, CATS[k].blurb, x.cats[k], x.cats[k] && onCats === 1)).join("")}</section>
@@ -782,6 +972,8 @@ function settings() {
   Object.assign(acts, {
     step(el) { x[el.dataset.key] = (+x[el.dataset.key] || 0) + +el.dataset.d; if (el.dataset.key === "sessionMin" && x.maxBankMin < x.sessionMin) x.maxBankMin = x.sessionMin; redraw(); },
     effort(el) { x.effort = +el.dataset.v; redraw(); },
+    movedef(el) { x.moveDefault = el.dataset.v; redraw(); },
+    cleardiff() { x.diff = {}; redraw(); },
     export() {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
@@ -809,7 +1001,7 @@ function settings() {
 }
 
 // ---------- go ----------
-const ROUTES = { "": home, all, do: doChallenge, lesson: lessonRoute, done, learn, course, progress, settings };
+const ROUTES = { "": home, all, do: doChallenge, lesson: lessonRoute, done, learn, course, progress, me: progress, buddy: buddyEdit, friends, settings };
 const sync = () => { if (location.hash !== current && /^(#\/.*)?$/.test(location.hash)) go(location.hash || "#/", false); };
 addEventListener("popstate", sync); addEventListener("hashchange", sync);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !path()) home(); });

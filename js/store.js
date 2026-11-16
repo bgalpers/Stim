@@ -9,7 +9,10 @@ export const DEFAULTS = {
     sessionMin: 30,        // minutes of apps earned per challenge
     maxBankMin: 60,        // most time you can have stacked up at once
     dailyCapMin: 0,        // 0 = no daily limit
-    effort: 1,             // scales reps and timed challenges
+    effort: 1,             // scales mind challenges (math problems, words, breathing time)
+    moveDefault: "med",    // easy | med | hard: exercise difficulty unless one is chosen per challenge
+    diff: {},              // per-exercise choice: { id: { mode: "easy"|"med"|"hard"|"custom", mult } }
+    take: 1,               // last position of the time-vs-XP slider (share of the time taken)
     cats: { move: true, learn: true, news: true, mind: true },
     goalPerDay: 3,         // challenges you aim to finish each day
     off: {},               // individual challenges switched off, by id
@@ -25,6 +28,10 @@ export const DEFAULTS = {
   totals: {},              // reps by challenge id
   journal: [],             // {t, prompt, text}
   notes: {},               // your one-line recap of each lesson, by lesson id
+  me: { name: "", color: "#5b3df5", eyes: "dot", wear: {} },   // your character
+  owned: [],               // character items bought with XP
+  spent: 0,                // XP spent on items
+  social: null,            // { id, secret, handle } once you join friends
 };
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -41,6 +48,11 @@ export function merge(saved) {
   s.journal = Array.isArray(saved.journal) ? saved.journal : [];
   s.totals = { ...(saved.totals || {}) };
   s.notes = { ...(saved.notes || {}) };
+  s.me = { ...DEFAULTS.me, ...(saved.me || {}), wear: { ...(saved.me?.wear || {}) } };
+  s.owned = Array.isArray(saved.owned) ? [...saved.owned] : [];
+  s.spent = Math.max(0, Number(saved.spent) || 0);
+  s.social = saved.social?.id ? { ...saved.social } : null;
+  s.settings.diff = { ...(saved.settings?.diff || {}) };
   s.expiresAt = Number(saved.expiresAt) || 0;
   return sanitize(s);
 }
@@ -55,6 +67,8 @@ export function sanitize(s) {
   x.effort = clamp(x.effort, 0.5, 2, 1);
   x.resetHour = Math.round(clamp(x.resetHour, 0, 12, 4));
   x.goalPerDay = Math.round(clamp(x.goalPerDay, 1, 10, 3));
+  if (!DIFF[x.moveDefault]) x.moveDefault = "med";
+  x.take = clamp(x.take, 0, 1, 1);
   x.shortcutName = String(x.shortcutName || "Stim Unlock").slice(0, 60);
   return s;
 }
@@ -91,20 +105,38 @@ export function nextGrant(s, now = Date.now()) {
   return Math.max(0, Math.floor(Math.min(sessionMin, room, capLeft(s, now))));
 }
 
-/** Record a finished (or skipped) challenge and add its time. Returns the log entry. */
-export function grant(s, { id, cat, title, kind = "done", spentMs = 0, detail = "", bonus = 0 }, now = Date.now()) {
-  const min = nextGrant(s, now);
+export const XP_BASE = 20;
+/** XP for a finished challenge: the less of the time you take, the more XP you keep. */
+export function xpFor(s, takeMin, { bonus = 0, scale = 1 } = {}) {
+  const max = Math.round((XP_BASE + Math.max(0, Math.min(5, bonus))) * Math.max(0.4, Math.min(2, scale)));
+  return Math.round(max * (1 - Math.max(0, Math.min(1, takeMin / s.settings.sessionMin))));
+}
+
+/** Record a finished (or skipped) challenge. takeMin = minutes of app time to take (default: all on offer). */
+export function grant(s, { id, cat, title, kind = "done", spentMs = 0, detail = "", bonus = 0, scale = 1, takeMin }, now = Date.now()) {
+  const offer = nextGrant(s, now);
+  const min = kind === "skip" || takeMin == null ? offer : Math.max(0, Math.min(offer, Math.round(takeMin)));
   if (min > 0) s.expiresAt = Math.max(now, s.expiresAt) + min * MIN;
-  const xp = kind === "done" ? 10 + Math.max(0, Math.min(5, Math.round(bonus))) : 0;
+  const xp = kind === "done" ? xpFor(s, min, { bonus, scale }) : 0;
   const entry = { t: now, id, cat, title, kind, min, xp, spentMs: Math.round(spentMs), detail };
   s.log.push(entry);
   if (s.log.length > 3000) s.log.splice(0, s.log.length - 3000);
   return entry;
 }
 
+// ---------- exercise difficulty ----------
+export const DIFF = { easy: 0.4, med: 1, hard: 1.6 };
+export function moveLevel(s, id) {
+  const d = s.settings.diff[id];
+  if (d?.mode === "custom" && d.mult > 0) return { mode: "custom", mult: Math.max(0.2, Math.min(6, d.mult)) };
+  const mode = DIFF[d?.mode] ? d.mode : s.settings.moveDefault;
+  return { mode, mult: DIFF[mode] };
+}
+
 // ---------- xp ----------
 export const XP_PER_LEVEL = 100;
 export const xp = s => s.log.reduce((n, e) => n + (e.xp || 0), 0);
+export const coins = s => Math.max(0, xp(s) - s.spent);
 export function level(s) { const x = xp(s); return { xp: x, level: Math.floor(x / XP_PER_LEVEL) + 1, into: x % XP_PER_LEVEL, need: XP_PER_LEVEL }; }
 export const doneCountToday = (s, now = Date.now()) => entriesOn(s, dk(s, now)).filter(e => e.kind === "done").length;
 
@@ -142,6 +174,13 @@ export function streak(s, now = Date.now()) {
   let n = 0;
   while (byDay.get(key()) === "done") { n++; d.setDate(d.getDate() - 1); }
   return n;
+}
+
+/** Buy a character item with XP. Returns false if you can't afford it. */
+export function buy(s, id, cost) {
+  if (s.owned.includes(id)) return true;
+  if (coins(s) < cost) return false;
+  s.owned.push(id); s.spent += cost; return true;
 }
 
 export function stats(s, now = Date.now(), days = 7) {

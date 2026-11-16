@@ -10,7 +10,7 @@ Stim is the follow-up to [pushup-gate](https://github.com/bgalpers/pushup-gate).
 
 1. You open a blocked app. An iOS automation checks whether you have time left. If not, it sends you to Stim.
 2. You pick a challenge, or shuffle for a new set. Each takes roughly three to six minutes.
-3. When you finish, Stim adds 30 minutes and hands that number to a Shortcut, which lifts the block.
+3. When you finish, a slider lets you take the reward as app time (up to 30 minutes), as XP for your character, or a mix. Whatever time you take is handed to a Shortcut, which lifts the block.
 4. When the time is up, the next app-open sends you back here.
 
 Time can be banked (60 minutes by default), so you can do two challenges in a row before a long stretch.
@@ -30,16 +30,34 @@ If the camera can't be used (permission denied, no camera, tracking not working)
 
 News comes from Wikipedia's public featured-content feed, fetched by your browser when you open that challenge.
 
+## Difficulty
+
+Every exercise has its own picker on its start screen: **Easy** (10 push-ups), **Medium** (25), **Hard** (40) or **Custom**, where you set the number yourself. The same multipliers (0.4×, 1×, 1.6×) apply to every other exercise, and your choice is remembered per exercise. Settings holds the default for exercises you haven't set.
+
+In **All challenges**, a star on each one decides whether it can come up in your shuffle. You can always open any challenge directly.
+
+## Time or XP
+
+After every challenge a slider splits the reward. All the way right is the full 30 minutes and no XP; all the way left is no time and full XP; halfway is 15 minutes and half the XP. Full XP is 20, plus up to 5 bonus (camera-verified, first-try answers, no slips), scaled by exercise difficulty (Easy 0.4×, Hard 1.6×). When your time bank is full, challenges pay out entirely in XP, so you can keep going without unlocking anything.
+
+## Your character
+
+XP raises your level (100 XP each) and is also what you spend. In **Me → Customise** you name your character, pick a colour and eyes for free, and buy headwear, eyewear, gear, capes, wings and auras (40 to 500 XP). Spending never lowers your level.
+
+## Friends
+
+Create a handle in the **Friends** tab, then follow people by handle or send your invite link. The board ranks you and your friends by challenges in the last seven days and shows each person's character, level, streak, today's and this week's counts, and the name of their last challenge.
+
 ## Progress
 
-Each finished challenge is worth 10 XP plus up to 5 bonus (camera-verified, first-try answers, no slips). 100 XP is a level. There is a daily goal (three challenges by default), a streak, a seven-day chart, minutes of effort against minutes of apps, lifetime rep counts, course paths and your journal.
+There is a daily goal (three challenges by default), a streak, a seven-day chart, minutes of effort against minutes of apps, lifetime rep counts, course paths and your journal.
 
 Skipping is possible. It asks three times, gives you the time, earns no XP, and marks the day as a skip.
 
 ## Settings
 
 - minutes earned per challenge (default 30), the most you can bank (60), an optional daily limit, and the daily goal
-- effort: Light, Standard, Hard or Max, which scales reps, holds and problem counts
+- default exercise difficulty (Easy, Medium, Hard), and effort for mind challenges (problem counts, word counts)
 - which kinds of challenge are offered, and individual challenges on or off
 - camera tracking, minimum reading time
 - the name of the Shortcut to run, and what hour the day rolls over
@@ -95,7 +113,9 @@ Exercises live in `js/catalog.js` as lists of camera stations, and the rule for 
 
 ## Privacy
 
-There is no account and no server. Progress, settings and journal entries are kept in your browser's local storage on your phone. Camera frames are processed on the device and never uploaded. Settings › Your data lets you export, import or erase everything.
+There is no account. Progress, settings, lesson notes and journal entries are kept in your browser's local storage on your phone. Camera frames are processed on the device and never uploaded. Settings › Your data lets you export, import or erase everything.
+
+The one thing that leaves the phone is your friends card, and only if you create a handle: display name, handle, character, level, XP, streak, challenge counts for today and the week, and the title of your last challenge. It is stored in a small Supabase database (`js/social.js`). The tables can't be read or written directly; the app calls a handful of database functions that check a random secret kept on your device. "Delete my friends profile" removes the card and your follows.
 
 ## Develop
 
@@ -112,6 +132,8 @@ npm test        # logic, content and question-builder tests
 | `js/catalog.js` | Exercises, mind games, prompts and how effort scales them |
 | `js/app.js` | Screens and routing |
 | `js/pose.js` | Camera tracking: one rule per exercise (MediaPipe pose) |
+| `js/buddy.js` | The character: drawing, items and prices |
+| `js/social.js` | Friends client (Supabase functions) |
 | `js/news.js` | Turns the Wikipedia feed into a read-and-quiz lesson |
 | `content/` | Courses |
 
