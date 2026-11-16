@@ -205,7 +205,3 @@ npm test        # logic, content and question-builder tests
 ## What still needs a real phone
 
 The camera rules are tested against stick figures, not people. Push-ups use the thresholds from pushup-gate; every other exercise is a first estimate and will need tuning (the numbers are the `lo` / `hi` values in `js/pose.js`). The live Wikipedia feed is tested against a sample of its format.
-
-## Toward a real app
-
-This is a web app, which is why blocking goes through Shortcuts. A native iOS app could use Apple's Screen Time API (FamilyControls / ManagedSettings) to shield apps directly and lift the shield for exactly 30 minutes, which would also fix the "nothing kicks you out mid-scroll" gap. The logic in `js/store.js`, the content and the pose rules would carry over.
