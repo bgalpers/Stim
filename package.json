@@ -2,5 +2,22 @@
   "name": "stim",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test", "serve": "python3 -m http.server 8080" }
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8080",
+    "build": "node scripts/build-web.mjs",
+    "sync": "npm run build && npx cap sync ios",
+    "ios": "npm run sync && npx cap open ios",
+    "ios:live": "STIM_LIVE=1 npm run sync && npx cap open ios",
+    "ios:setup": "node scripts/add-ios-targets.cjs"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "typescript": "^5.6.0",
+    "xcode": "^3.0.1"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2"
+  }
 }

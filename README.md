@@ -67,7 +67,67 @@ Skipping is possible. It asks three times, gives you the time, earns no XP, and 
 - camera tracking, minimum reading time
 - the name of the Shortcut to run, and what hour the day rolls over
 
-## Set up the lock on iPhone
+## iPhone app (Screen Time)
+
+The `ios/` folder is a real iPhone app: the same web app inside a native shell, plus a small Swift plugin that uses Apple's Screen Time frameworks to block the apps you choose and lift the block for exactly the minutes you claim. No Shortcuts needed. When time runs out, a background extension puts the block back even if Stim isn't open.
+
+### What you need
+
+- A Mac with **Xcode** (free, Mac App Store) and **Node.js** (nodejs.org).
+- An **Apple Developer Program** membership ($99/year). Screen Time apps need it even for testing on your own phone.
+- Your **iPhone, iOS 16 or later**, and a cable. Screen Time doesn't work in the simulator.
+
+### First run
+
+```sh
+git clone https://github.com/bgalpers/Stim.git && cd Stim
+npm install
+npm run ios          # builds the web app, syncs it into ios/, opens Xcode
+```
+
+In Xcode:
+
+1. Click the blue **App** project at the top of the left sidebar.
+2. Select the **App** target → **Signing & Capabilities** → set **Team** to your developer account. Do the same for the **StimMonitor** target.
+3. If Xcode says a bundle ID is unavailable, change `com.bgalpers.stim` (and `com.bgalpers.stim.monitor`) to something of your own, and change `group.com.bgalpers.stim` the same way in `App/App.entitlements`, `StimMonitor/StimMonitor.entitlements` and `Shared/StimShared.swift`. All three must match.
+4. If either target shows a red error about **Family Controls** or **App Groups**, click **+ Capability** on that target, add **Family Controls**, then add **App Groups** and tick the group above.
+5. Plug in your iPhone. On the phone: **Settings → Privacy & Security → Developer Mode → on** (it restarts). Pick your iPhone in the device menu at the top of Xcode and press **Run** (▶).
+6. The first launch may say the developer isn't trusted: **Settings → General → VPN & Device Management → trust your account**.
+
+In Stim, the Today screen asks you to **Allow Screen Time** and **choose apps to block**. Settings → Blocking has the same controls and a **Test the re-lock** button that unlocks for two minutes, so you can check that blocking comes back on its own.
+
+### Keep developing
+
+The app and the website are one codebase. Edit the files at the repo root as before; then either:
+
+- **Rebuild:** `npm run sync`, then Run in Xcode (about a minute). Use this for anything in `ios/`.
+- **Live from GitHub:** `npm run ios:live`, Run once in Xcode, and from then on the app loads `bgalpers.github.io/Stim`, so every push to `gh-pages` updates it without Xcode.
+- **Live from your Mac:** `npm run serve`, then `STIM_LIVE=http://<your-mac-ip>:8080 npm run sync` and Run. Edits show up on a reload. Phone and Mac must be on the same Wi-Fi.
+
+Switch back to the bundled app with `npm run sync` before giving the app to anyone else.
+
+### Giving it to friends
+
+Testing on your own phone works with the development entitlement right away. Installing on other people's phones goes through TestFlight, which needs Apple to approve the **Family Controls (Distribution)** entitlement for both `com.bgalpers.stim` and `com.bgalpers.stim.monitor`. Request it at developer.apple.com/contact/request/family-controls-distribution; approval can take days to weeks.
+
+### Known gaps
+
+- When you open a blocked app you see Apple's standard Screen Time screen, with no button into Stim. A custom shield screen (and a notification that opens Stim) is the next piece.
+- iOS won't schedule a Device Activity interval shorter than 15 minutes, so short unlocks use one that started in the past. If the re-lock test fails, this is the first place to look (`StimShared.schedule`).
+- The Swift code has not been compiled yet. Expect a round of fixes on the first build; paste Xcode's errors back to Claude.
+
+| File | What's in it |
+| --- | --- |
+| `ios/App/App/ScreenTimePlugin.swift` | Permission, app picker, unlock-until |
+| `ios/App/Shared/StimShared.swift` | Shield on/off and the re-lock schedule (used by app and extension) |
+| `ios/App/StimMonitor/StimMonitor.swift` | Background extension that re-locks when time is up |
+| `ios/App/App/StimViewController.swift` | Registers the plugin with Capacitor |
+| `js/native.js` | The web app's side of the bridge |
+| `capacitor.config.ts` | App ID, and the live-reload switch |
+| `scripts/add-ios-targets.cjs` | Adds the extension to the Xcode project after `npx cap add ios` (already done) |
+
+## Set up the lock with Shortcuts (website only)
+
 
 Stim tracks the time. Shortcuts does the blocking. You need one shortcut and one automation. Action names shift a little between iOS versions; search for the nearest match.
 

@@ -2,6 +2,7 @@ import * as S from "./store.js";
 import { CATS, CHALLENGES, byId, scaled, summary, stationLabel, primary, PROMPTS } from "./catalog.js";
 import { buddy, BASE_LABEL, options, optionName, SLOTS, ITEMS, itemById, titleFor } from "./buddy.js";
 import * as Social from "./social.js";
+import * as Native from "./native.js";
 import { COURSES, courseById, findLesson } from "../content/courses.js";
 import * as News from "./news.js";
 
@@ -108,7 +109,9 @@ function setRing(el, p, big) {
 }
 const shortcutUrl = (min = Math.ceil(S.remainingMs(state) / 60000)) =>
   `shortcuts://run-shortcut?name=${encodeURIComponent(state.settings.shortcutName)}&input=text&text=${min}`;
-const openAppsBtn = (cls = "white") => state.settings.useShortcut && S.isOpen(state)
+// iPhone app: Screen Time does the blocking, so whenever app time changes, tell it.
+const syncLock = () => Native.setUnlockedUntil(S.isOpen(state) ? state.expiresAt : 0);
+const openAppsBtn = (cls = "white") => !Native.isNative && state.settings.useShortcut && S.isOpen(state)
   ? `<a class="btn ${cls}" href="${esc(shortcutUrl())}">Open my apps</a>` : "";
 const flame = n => `<span class="stat flame${n ? " lit" : ""}" title="${plural(n, "day")} streak"><i>🔥</i><b class="num">${n}</b></span>`;
 const xpChip = () => `<span class="stat xp" title="XP to spend"><i>${BOLT}</i><b class="num">${S.coins(state)}</b></span>`;
@@ -180,7 +183,10 @@ document.addEventListener("click", e => {
 const GLOBAL = {
   shuffle() { shuffleN++; const l = $("#shuffle"); if (l) { l.innerHTML = suggestions().map(card).join(""); l.classList.remove("deal"); void l.offsetWidth; l.classList.add("deal"); } beep(700, 0.05, 0.08); },
   skip() { openSheet(); },
-  relock() { S.relock(state); persist(); wasOpen = false; home(); if (state.settings.useShortcut) location.href = shortcutUrl(0); },
+  relock() { S.relock(state); persist(); wasOpen = false; syncLock(); home(); if (!Native.isNative && state.settings.useShortcut) location.href = shortcutUrl(0); },
+  async stAuth() { const r = await Native.authorize(); if (r?.authorization === "approved") { good(); if (!r.apps && !r.categories && !r.sites) await Native.pickApps(); syncLock(); } route(); },
+  async stPick() { await Native.pickApps(); syncLock(); route(); },
+  async stTest(el) { el.disabled = true; const r = await Native.setUnlockedUntil(Date.now() + 2 * 60000); el.textContent = r?.error ? `Failed: ${r.error}` : r?.scheduled === false ? `Unlocked, but re-lock wasn't scheduled: ${r.error || "unknown"}` : "Unlocked for 2 min. Leave Stim and try a blocked app."; },
 };
 
 function draw(html, cls = "") {
@@ -203,6 +209,7 @@ function home() {
         : `<h1>Earn your next <span class="num">${x.sessionMin}</span> minutes</h1><p>One short challenge for your body or your mind.</p>`}</div>
       ${open ? `<div class="hero-actions">${openAppsBtn()}<button class="link light" type="button" data-act="relock">Lock now</button></div>` : ""}
     </section>
+    <div id="stsetup"></div>
     ${goalPips()}
     <section class="block">
       <div class="row"><h2>${open ? "Bank more time" : "Pick a challenge"}</h2>${sug.length ? `<button class="chipbtn" type="button" data-act="shuffle">🔀 Shuffle</button>` : ""}</div>
@@ -211,6 +218,14 @@ function home() {
       <a class="btn outline" href="#/all">All ${CHALLENGES.length + COURSES.reduce((n, c) => n + c.lessons.length, 0)} challenges</a>
     </section>
     ${open ? "" : `<button class="link" type="button" data-act="skip">Skip this one</button>`}`, "home");
+  if (Native.isNative) { const my = token; const paint = st => { if (my === token) $("#stsetup").innerHTML = setupCard(st); }; paint(Native.last); Native.status().then(paint); }
+}
+function setupCard(st) {
+  if (!st || Native.ready(st)) return "";
+  const allowed = st.authorization === "approved";
+  return `<section class="setup card pad"><b>Set up blocking</b><p class="mini">Stim uses Screen Time to block the apps you choose until you earn time.</p>
+    <div class="setup-steps"><div class="${allowed ? "done" : ""}"><span>${allowed ? "✓" : "1"}</span>Allow Screen Time</div><div><span>2</span>Choose apps to block</div></div>
+    <button class="btn primary" type="button" data-act="${allowed ? "stPick" : "stAuth"}">${allowed ? "Choose apps" : st.authorization === "denied" ? "Allow in Settings, then try again" : "Allow Screen Time"}</button></section>`;
 }
 
 function all() {
@@ -234,7 +249,7 @@ setInterval(() => {
   $$("[data-clock]").forEach(el => (el.textContent = open ? fmtClock(ms) : el.closest("[data-timechip]") ? "Locked" : "0:00"));
   const hr = $(".ring-hero"); if (hr && open) setRing(hr, ms / (state.settings.maxBankMin * 60000));
   if (wasOpen !== open) {
-    if (!open) { beep(660, 0.25); setTimeout(() => beep(440, 0.4), 260); }
+    if (!open) { beep(660, 0.25); setTimeout(() => beep(440, 0.4), 260); syncLock(); }
     $$("[data-timechip]").forEach(el => { el.classList.toggle("open", open); el.firstElementChild.textContent = open ? "🔓" : "🔒"; });
     if (!path()) home();
   }
@@ -258,7 +273,7 @@ function claim(takeMin) {
   const before = S.level(state), streakBefore = S.streak(state), goalBefore = S.doneCountToday(state), offer = S.nextGrant(state);
   const entry = S.grant(state, { ...p, kind: "done", takeMin });
   if (offer > 0) state.settings.take = entry.min / offer;
-  persist(); wasOpen = S.isOpen(state);
+  persist(); wasOpen = S.isOpen(state); syncLock();
   last = { entry, before, streakBefore, goalBefore };
   syncSocial();
 }
@@ -334,7 +349,7 @@ $("#sheetYes").onclick = () => {
   if (++ask < 3) return paintSheet();
   closeSheet();
   last = { entry: S.grant(state, { id: "skip", cat: "skip", title: "Skipped", kind: "skip" }), before: S.level(state), streakBefore: S.streak(state), goalBefore: 0 };
-  persist(); wasOpen = S.isOpen(state);
+  persist(); wasOpen = S.isOpen(state); syncLock();
   go("#/done");
 };
 
@@ -997,13 +1012,13 @@ function settings() {
       ${toggle("camera", "Camera tracking", "Every exercise is counted or timed on-device by the camera. Off means tapping and timers.", x.camera)}
       ${toggle("readTimer", "Minimum reading time", "Each lesson card needs a few seconds before you can move on.", x.readTimer)}
     </section>
-    <h2 class="grp">iPhone hand-off</h2>
+    ${Native.isNative ? `<h2 class="grp">Blocking</h2><section class="card" id="stset"><div class="setrow"><div><b>Screen Time</b><small>Checking…</small></div></div></section>` : `<h2 class="grp">iPhone hand-off</h2>
     <section class="card">
       ${toggle("useShortcut", "Run a Shortcut when time is earned", "Passes the minutes to the Shortcut that lifts your app block.", x.useShortcut)}
       <label class="setrow col"><div><b>Shortcut name</b><small>Must match the name in the Shortcuts app exactly.</small></div><input type="text" class="text" data-text="shortcutName" value="${esc(x.shortcutName)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="setrow"><div><b>Test it</b><small>Runs the Shortcut with 1 minute.</small></div><a class="chipbtn" href="${esc(shortcutUrl(1))}">Run</a></div>
-      <a class="setrow link-row" href="https://github.com/bgalpers/Stim#set-up-the-lock-on-iphone" target="_blank" rel="noopener"><div><b>Setup guide</b><small>How to build the two Shortcuts</small></div><span aria-hidden="true">↗</span></a>
-    </section>
+      <a class="setrow link-row" href="https://github.com/bgalpers/Stim#set-up-the-lock-with-shortcuts-website-only" target="_blank" rel="noopener"><div><b>Setup guide</b><small>How to build the two Shortcuts</small></div><span aria-hidden="true">↗</span></a>
+    </section>`}
     <h2 class="grp">Day</h2>
     <section class="card">${stepper("resetHour", "New day starts at", "Streaks and daily limits roll over then", 1, h => new Date(2000, 0, 1, h).toLocaleTimeString("en-US", { hour: "numeric" }))}</section>
     <h2 class="grp">Your data</h2>
@@ -1013,6 +1028,14 @@ function settings() {
       <div class="setrow"><div><b>Start over</b><small>Erases progress and settings.</small></div><button class="chipbtn danger" type="button" data-act="reset">Erase</button></div>
     </section>
     <p class="mini center">Stim · <a href="https://github.com/bgalpers/Stim" target="_blank" rel="noopener">source</a></p>`, "settings");
+  if (Native.isNative) Native.status().then(st => {
+    const box = $("#stset"); if (!box || !st) return;
+    const a = st.authorization, until = st.unlockedUntil > Date.now() ? new Date(st.unlockedUntil).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+    box.innerHTML = `<div class="setrow"><div><b>Screen Time permission</b><small>${a === "approved" ? "Allowed" : a === "denied" ? "Turned off. Allow Stim in iPhone Settings › Screen Time, then come back." : "Not asked yet"}</small></div>${a === "approved" ? `<span class="okmark">✓</span>` : `<button class="chipbtn" type="button" data-act="stAuth">Allow</button>`}</div>
+      <div class="setrow"><div><b>Apps to block</b><small>${esc(Native.chosen(st))}</small></div><button class="chipbtn" type="button" data-act="stPick" ${a === "approved" ? "" : "disabled"}>Choose</button></div>
+      <div class="setrow"><div><b>Right now</b><small>${until ? `Unlocked until ${until}` : "Locked"}</small></div></div>
+      <div class="setrow col"><div><b>Test the re-lock</b><small>Unlocks for 2 minutes without using a challenge. Leave Stim, open a blocked app, wait 2 minutes, try again.</small></div><button class="chipbtn" type="button" data-act="stTest" ${Native.ready(st) ? "" : "disabled"}>Unlock for 2 minutes</button></div>`;
+  });
   const redraw = () => { S.sanitize(state); persist(); const y = scrollY, open = !!$("details.fold")?.open; settings(); if (open) $("details.fold").open = true; scrollTo(0, y); };
   let armed = false;
   Object.assign(acts, {
@@ -1027,7 +1050,7 @@ function settings() {
     },
     reset(el) {
       if (!armed) { armed = true; el.textContent = "Tap again to erase"; return setTimeout(() => { armed = false; if (el.isConnected) el.textContent = "Erase"; }, 4000); }
-      localStorage.removeItem(S.KEY); localStorage.removeItem(DAILY_KEY); try { history.replaceState(null, "", "#/"); } catch {} location.reload();
+      localStorage.removeItem(S.KEY); localStorage.removeItem(DAILY_KEY); Native.setUnlockedUntil(0); try { history.replaceState(null, "", "#/"); } catch {} location.reload();
     },
   });
   view.onchange = async e => {
@@ -1039,7 +1062,7 @@ function settings() {
       redraw();
     } else if (t.dataset.text) { x[t.dataset.text] = t.value.trim() || "Stim Unlock"; redraw(); }
     else if (t.dataset.import != null && t.files[0]) {
-      try { Object.assign(state, S.merge(JSON.parse(await t.files[0].text()))); persist(); redraw(); }
+      try { Object.assign(state, S.merge(JSON.parse(await t.files[0].text()))); persist(); syncLock(); redraw(); }
       catch { t.closest(".setrow").querySelector("small").textContent = "That file couldn't be read."; }
     }
   };
@@ -1050,5 +1073,6 @@ function settings() {
 const ROUTES = { "": home, all, do: doChallenge, lesson: lessonRoute, done, learn, course, progress, me: progress, buddy: buddyEdit, friends, settings };
 const sync = () => { if (location.hash !== current && /^(#\/.*)?$/.test(location.hash)) go(location.hash || "#/", false); };
 addEventListener("popstate", sync); addEventListener("hashchange", sync);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && !path()) home(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) return; syncLock(); if (!path()) home(); });
+if (Native.isNative) { document.documentElement.classList.add("native"); syncLock(); }
 route();
