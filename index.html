@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stim">
-<meta name="theme-color" content="#10382a">
+<meta name="theme-color" content="#5b3df5">
 <meta name="description" content="Earn your scroll time. A short challenge for your body or your mind unlocks 30 minutes of social media.">
 <title>Stim</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -22,35 +22,41 @@
 <main id="view" tabindex="-1"></main>
 
 <nav class="tabs" id="tabs" aria-label="Sections">
-  <a href="#/" data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V10M12 14c-4 0-6-2.5-6-6 4 0 6 2.500 6 6Zm0-3c0-4 2.500-6.500 6.500-6.500C18.500 8.500 16 11 12 11Z"/></svg>Today</a>
-  <a href="#/learn" data-tab="learn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.500C6.500 4.500 9.500 4.800 12 6.500c2.500-1.700 5.500-2 8-1v12.500c-2.500-1-5.500-.7-8 1-2.500-1.700-5.500-2-8-1ZM12 6.500V19"/></svg>Learn</a>
-  <a href="#/progress" data-tab="progress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>Progress</a>
+  <a href="#/" data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>Today</a>
+  <a href="#/learn" data-tab="learn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.500C6.500 4.500 9.500 4.800 12 6.500c2.500-1.700 5.500-2 8-1V18c-2.500-1-5.500-.7-8 1-2.500-1.700-5.500-2-8-1ZM12 6.500V19"/></svg>Learn</a>
+  <a href="#/progress" data-tab="progress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M12 20V4M19 20v-5"/></svg>Progress</a>
   <a href="#/settings" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</a>
 </nav>
 
-<!-- Camera rep counter -->
-<section id="stage" class="stage" hidden aria-label="Camera rep counter">
+<!-- Camera stage: every exercise runs here -->
+<section id="stage" class="stage" hidden aria-label="Camera exercise tracker">
   <div class="stage-video"><video id="video" playsinline muted></video><canvas id="canvas"></canvas></div>
   <div class="stage-top">
-    <button class="glass chip" id="camPause" type="button">Pause</button>
-    <span class="glass chip num" id="camAngle">—°</span>
+    <button class="xbtn glass" id="camClose" type="button" aria-label="Pause">✕</button>
+    <div class="pbar on-dark"><i id="camBar"></i></div>
+    <span class="glass chip" id="camStep"></span>
   </div>
   <div class="stage-hint glass" id="camHint" hidden></div>
   <div class="stage-dock">
     <div class="dockcard glass">
-      <div class="ring ring-sm" id="camRing"></div>
+      <div id="camRing"></div>
       <div class="dock-main">
+        <p class="dock-label" id="camLabel"></p>
         <p class="cue idle" id="camCue">Get in position</p>
-        <div class="meter" aria-hidden="true"><i id="camMeter"></i><span class="mk" id="mkDown"></span><span class="mk" id="mkUp"></span></div>
+        <div class="meter" id="camMeterBox" aria-hidden="true"><i id="camMeter"></i><span class="mk" id="mkDown"></span><span class="mk" id="mkUp"></span></div>
       </div>
     </div>
   </div>
-  <div class="stage-paused" id="camPaused" hidden>
-    <p>Paused</p>
-    <button class="btn primary" id="camResume" type="button">Resume</button>
-    <button class="btn ghost-light" id="camExit" type="button">Count by tapping instead</button>
+  <div class="stage-over" id="camRest" hidden><p class="over-kicker">Rest</p><p class="over-big" id="camRestN">0:20</p><p class="over-sub" id="camRestNext"></p></div>
+  <div class="stage-over" id="camPaused" hidden>
+    <p class="over-big small">Paused</p>
+    <button class="btn primary" id="camResume" type="button">Keep going</button>
+    <button class="btn ghost-light" id="camManual" type="button">Camera not tracking? Finish without it</button>
+    <button class="btn ghost-light" id="camQuit" type="button">Quit</button>
   </div>
 </section>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
 
 <!-- Skip sheet -->
 <div class="scrim" id="scrim" hidden></div>

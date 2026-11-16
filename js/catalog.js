@@ -1,91 +1,104 @@
-// The fixed challenges. Lessons and the daily briefing are generated elsewhere.
-// type: "reps" (camera or tap), "timed" (guided intervals), "breath", "journal", "feed"
+// Every fixed challenge. Lessons and the daily briefing are generated elsewhere.
+// Move challenges are a list of camera "stations": {pose, reps} | {pose, s} (a hold) | {rest: s}.
+
+import { MODES } from "./pose.js";
 
 export const CATS = {
-  move:  { name: "Move",  blurb: "No-equipment exercise" },
-  learn: { name: "Learn", blurb: "A lesson from your courses" },
-  news:  { name: "News",  blurb: "Read today, answer questions" },
-  reset: { name: "Reset", blurb: "Breathe or write" },
+  move:  { name: "Move",  blurb: "No-equipment exercise, tracked by camera", icon: "⚡" },
+  learn: { name: "Learn", blurb: "A lesson from your courses", icon: "📚" },
+  news:  { name: "News",  blurb: "Read today, answer questions", icon: "📰" },
+  mind:  { name: "Mind",  blurb: "Focus, memory, breathing, writing", icon: "🧠" },
 };
 
-const sets = (n, work, rest, label, cue) =>
-  Array.from({ length: n }, (_, i) => [
-    { label: n > 1 ? `${label} ${i + 1} of ${n}` : label, s: work, cue },
-    ...(i < n - 1 ? [{ label: "Rest", s: rest, rest: true, cue: "Shake it out." }] : []),
-  ]).flat();
+const R = (pose, reps) => ({ pose, reps });
+const H = (pose, s, label, cue) => ({ pose, s, ...(label ? { label, cue } : {}) });
+const sets = (n, st, rest) => Array.from({ length: n }, (_, i) => (i < n - 1 ? [st, { rest }] : [st])).flat();
+const move = (id, icon, title, est, stations, tip) => ({ id, cat: "move", type: "move", icon, title, est, stations, tip });
 
 export const CHALLENGES = [
-  { id: "pushups", cat: "move", type: "reps", title: "Push-ups", base: 25, est: 4, pose: "pushup", unit: "push-ups",
-    tips: ["Lean the phone on the floor 1.5–2 m to your side, front camera facing you.", "Keep your head, arm and hips in frame.", "Break it into as many sets as you need."] },
-  { id: "squats", cat: "move", type: "reps", title: "Squats", base: 50, est: 5, pose: "squat", unit: "squats",
-    tips: ["Stand side-on, 2–3 m from the phone, whole body in frame.", "Sit back until your thighs are about parallel to the floor.", "Stand all the way up for the rep to count."] },
-  { id: "lunges", cat: "move", type: "reps", title: "Alternating lunges", base: 30, est: 5, unit: "lunges",
-    tips: ["Step forward, lower until both knees are near 90°.", "Push back to standing, switch legs. Each leg counts as one."] },
-  { id: "jacks", cat: "move", type: "reps", title: "Jumping jacks", base: 100, est: 4, unit: "jacks", step: 10,
-    tips: ["Count in tens: tap once for every ten.", "Land softly, keep a steady rhythm."] },
-  { id: "burpees", cat: "move", type: "reps", title: "Burpees", base: 15, est: 5, unit: "burpees",
-    tips: ["Squat, kick back to a plank, chest to floor, jump up.", "Slow and clean beats fast and sloppy."] },
-  { id: "plank", cat: "move", type: "timed", title: "Plank sets", est: 5,
-    steps: sets(4, 45, 30, "Plank", "Elbows under shoulders. Straight line from head to heels."),
-    tips: ["Forearm plank. Drop to your knees if your hips sag."] },
-  { id: "wallsit", cat: "move", type: "timed", title: "Wall sits", est: 5,
-    steps: sets(4, 45, 30, "Wall sit", "Back flat on the wall, thighs parallel, knees over ankles."),
-    tips: ["Find a clear bit of wall."] },
-  { id: "circuit", cat: "move", type: "timed", title: "Bodyweight circuit", est: 7,
-    steps: [
-      ["High knees", "Drive your knees to hip height."], ["Push-ups", "Any variation. Keep moving."],
-      ["Squats", "Sit back, chest up."], ["Mountain climbers", "Hips low, quick feet."],
-      ["Glute bridges", "Squeeze at the top."], ["Plank", "Hold steady."], ["Jumping jacks", "Finish strong."],
-    ].flatMap(([label, cue], i, a) => [{ label, s: 40, cue }, ...(i < a.length - 1 ? [{ label: "Rest", s: 20, rest: true, cue: `Next: ${a[i + 1][0]}` }] : [])]),
-    tips: ["Seven moves, 40 seconds on, 20 off."] },
-  { id: "mobility", cat: "move", type: "timed", title: "Mobility flow", est: 6, gentle: true,
-    steps: [
-      ["Neck circles", "Slow, both directions."], ["Arm circles", "Small to large."],
-      ["Cat-cow", "On all fours, round then arch your spine."], ["World's greatest stretch, left", "Lunge, elbow to instep, rotate up."],
-      ["World's greatest stretch, right", "Same on the other side."], ["Deep squat hold", "Heels down, chest tall."],
-      ["Forward fold", "Soft knees, let your head hang."], ["Child's pose", "Hips back, arms long, breathe."],
-    ].map(([label, cue]) => ({ label, s: 45, cue })),
-    tips: ["Eight stretches, 45 seconds each. No rests needed."] },
+  move("pushups", "💪", "Push-ups", 4, [R("pushup", 25)]),
+  move("squats", "🦵", "Squats", 4, [R("squat", 50)]),
+  move("lunges", "🚶", "Alternating lunges", 4, [R("lunge", 30)], "Each leg counts as one."),
+  move("jacks", "⭐", "Jumping jacks", 3, [R("jacks", 80)]),
+  move("highknees", "🏃", "High knees", 3, [R("highknees", 80)], "Each knee counts as one. Bring it to hip height."),
+  move("situps", "🌀", "Sit-ups", 4, [R("situp", 30)], "Knees bent, feet on the floor."),
+  move("bridges", "🌉", "Glute bridges", 4, [R("bridge", 30)], "On your back, knees bent, drive your hips up."),
+  move("burpees", "🔥", "Burpees", 5, [R("burpee", 15)], "Chest to the floor, then stand all the way up."),
+  move("goodmornings", "🙇", "Good mornings", 4, [R("goodmorning", 30)], "Hands behind your head, legs straight, hinge at the hips."),
+  move("squatjumps", "🦘", "Squat jumps", 4, [R("squat", 30)], "Squat, then jump as you stand."),
+  move("plank", "🪵", "Plank sets", 4, sets(3, H("plank", 40), 20), "Forearms down, elbows under shoulders."),
+  move("wallsit", "🧱", "Wall sits", 4, sets(3, H("wallsit", 40), 20), "Back on a wall, or hold a low squat."),
+  move("bridgehold", "🌁", "Bridge holds", 4, sets(3, H("bridgehold", 40), 15)),
+  move("lungehold", "🗿", "Lunge holds", 4, sets(4, H("lungehold", 25), 8), "Swap legs each round."),
+  move("balance", "🦩", "One-leg balance", 4, sets(4, H("balance", 35), 5), "Swap legs each round. Harder than it sounds."),
+  move("fullbody", "🎯", "Full-body circuit", 6, [R("jacks", 25), R("squat", 15), R("pushup", 10), R("lunge", 16), H("plank", 30)]),
+  move("legs", "🏔️", "Leg day circuit", 6, [R("squat", 20), R("lunge", 20), R("highknees", 30), H("wallsit", 40)]),
+  move("core", "🛡️", "Core circuit", 6, [R("situp", 15), H("plank", 30), R("bridge", 15), H("plank", 30)]),
+  move("cardio", "💥", "Cardio burst", 5, [R("jacks", 30), R("highknees", 40), R("burpee", 8), R("jacks", 30)]),
+  move("mobility", "🧘", "Mobility flow", 5, [
+    H("present", 40, "Neck and arm circles", "Slow circles, both directions."), H("present", 40, "Cat-cow", "On all fours: round your spine, then arch it."),
+    H("present", 40, "World's greatest stretch", "Lunge, elbow to instep, rotate up. Switch halfway."), H("present", 40, "Deep squat hold", "Heels down, chest tall."),
+    H("present", 40, "Forward fold", "Soft knees, let your head hang."), H("present", 40, "Child's pose", "Hips back, arms long, breathe."),
+  ], "The camera just checks you're there. Follow the cues."),
 
-  { id: "breathing", cat: "reset", type: "breath", title: "Box breathing", est: 5, seconds: 300,
-    tips: ["In for 4, hold 4, out for 4, hold 4.", "Sit upright, phone down in front of you."] },
-  { id: "journal", cat: "reset", type: "journal", title: "Write for five", est: 5, words: 60,
-    tips: ["A few honest sentences. Nobody else reads this."] },
+  { id: "breathing", cat: "mind", type: "breath", icon: "🌬️", title: "Box breathing", est: 5, seconds: 304 },
+  { id: "math", cat: "mind", type: "math", icon: "🔢", title: "Mental math sprint", est: 4, count: 25 },
+  { id: "memory", cat: "mind", type: "memory", icon: "🧩", title: "Sequence memory", est: 4, rounds: 7 },
+  { id: "journal", cat: "mind", type: "journal", icon: "✍️", title: "Write for five", est: 5, words: 60, prompts: "journal" },
+  { id: "gratitude", cat: "mind", type: "journal", icon: "🙏", title: "Three good things", est: 3, words: 40, prompts: "gratitude" },
+  { id: "plan", cat: "mind", type: "journal", icon: "🗺️", title: "Plan the next block", est: 3, words: 40, prompts: "plan" },
 
-  { id: "briefing", cat: "news", type: "feed", feed: "news", title: "Today's briefing", est: 6, daily: true,
-    tips: ["Current stories from Wikipedia's “In the news”, then questions on what you read."] },
-  { id: "onthisday", cat: "news", type: "feed", feed: "onthisday", title: "On this day", est: 5, daily: true,
-    tips: ["Five things that happened on today's date, then a recall quiz."] },
+  { id: "briefing", cat: "news", type: "feed", feed: "news", icon: "🗞️", title: "Today's briefing", est: 5, daily: true },
+  { id: "onthisday", cat: "news", type: "feed", feed: "onthisday", icon: "📅", title: "On this day", est: 4, daily: true },
 ];
 
 export const byId = id => CHALLENGES.find(c => c.id === id);
-
 const round5 = n => Math.max(5, Math.round(n / 5) * 5);
 
 /** Apply the effort setting. Returns a copy with concrete targets. */
 export function scaled(ch, effort = 1) {
   const c = { ...ch };
-  if (ch.type === "reps") c.target = ch.step ? Math.max(ch.step, Math.round(ch.base * effort / ch.step) * ch.step) : round5(ch.base * effort);
-  if (ch.type === "timed") c.steps = ch.steps.map(s => ({ ...s, s: s.rest ? s.s : round5(s.s * effort) }));
+  if (ch.type === "move") c.stations = ch.stations.map(s => (s.rest ? s : s.reps ? { ...s, reps: round5(s.reps * effort) } : { ...s, s: round5(s.s * effort) }));
   if (ch.type === "breath") c.seconds = Math.round(ch.seconds * effort / 16) * 16;
   if (ch.type === "journal") c.words = round5(ch.words * effort);
-  c.estMin = ["feed"].includes(ch.type) ? ch.est : Math.max(2, Math.round(ch.est * (ch.type === "timed" ? 0.4 + 0.6 * effort : effort)));
+  if (ch.type === "math") c.count = round5(ch.count * effort);
+  if (ch.type === "memory") c.rounds = Math.max(4, Math.round(ch.rounds * (0.6 + 0.4 * effort)));
+  c.estMin = ch.type === "feed" ? ch.est : Math.max(2, Math.round(ch.est * (0.4 + 0.6 * effort)));
   return c;
 }
+export const stationLabel = s => (s.rest ? "Rest" : s.label || MODES[s.pose].name);
+export function summary(ch) {
+  if (ch.type !== "move") return "";
+  const work = ch.stations.filter(s => !s.rest);
+  if (work.length === 1) return work[0].reps ? `${work[0].reps} reps` : `${work[0].s} sec`;
+  if (work.every(s => s.pose === work[0].pose && !s.label)) return `${work.length} × ${work[0].s} sec`;
+  return `${work.length} stations`;
+}
 
-export const JOURNAL_PROMPTS = [
-  "What did you actually want when you reached for your phone just now?",
-  "Describe one thing you did this week that you're quietly proud of.",
-  "What's one task you're avoiding, and what is the smallest first step?",
-  "Who helped you recently? What would you say to thank them?",
-  "What would make today a good day, looking back from tonight?",
-  "Write about something you changed your mind on in the last year.",
-  "What are you learning right now, and why does it matter to you?",
-  "If you had an extra free hour every day, what would you do with it?",
-  "Describe a place where you feel calm, in as much detail as you can.",
-  "What habit would the person you want to be in five years already have?",
-  "What's been taking more of your attention than it deserves?",
-  "Write down three specific things that went well in the last 24 hours and why.",
-  "What conversation do you need to have that you keep putting off?",
-  "What did you last read, watch or hear that changed how you see something?",
-];
+export const PROMPTS = {
+  journal: [
+    "What did you actually want when you reached for your phone just now?",
+    "Describe one thing you did this week that you're quietly proud of.",
+    "What's one task you're avoiding, and what is the smallest first step?",
+    "What would make today a good day, looking back from tonight?",
+    "Write about something you changed your mind on in the last year.",
+    "What are you learning right now, and why does it matter to you?",
+    "If you had an extra free hour every day, what would you do with it?",
+    "What habit would the person you want to be in five years already have?",
+    "What's been taking more of your attention than it deserves?",
+    "What conversation do you need to have that you keep putting off?",
+    "What did you last read, watch or hear that changed how you see something?",
+    "Describe a place where you feel calm, in as much detail as you can.",
+  ],
+  gratitude: [
+    "Name three specific things that went well in the last 24 hours, and why each one happened.",
+    "Who helped you recently? What exactly did they do, and what would you say to thank them?",
+    "What's something ordinary in your day that you'd miss if it were gone?",
+    "Think of something hard from the past year. What did it give you?",
+  ],
+  plan: [
+    "What are the three things that matter most in the next few hours? What's the first step on each?",
+    "What would make the rest of today a win? What could get in the way, and what will you do about it?",
+    "List what's on your mind. Then mark the one thing to do next and the one thing to drop.",
+  ],
+};

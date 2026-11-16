@@ -1,6 +1,6 @@
 // State + the rules of the game. No DOM in here so it can be tested in Node.
 
-export const KEY = "stim.v1";
+export const KEY = "stim.v2";
 const MIN = 60_000, HOUR = 3_600_000;
 
 export const DEFAULTS = {
@@ -10,9 +10,10 @@ export const DEFAULTS = {
     maxBankMin: 60,        // most time you can have stacked up at once
     dailyCapMin: 0,        // 0 = no daily limit
     effort: 1,             // scales reps and timed challenges
-    cats: { move: true, learn: true, news: true, reset: true },
+    cats: { move: true, learn: true, news: true, mind: true },
+    goalPerDay: 3,         // challenges you aim to finish each day
     off: {},               // individual challenges switched off, by id
-    camera: true,          // count push-ups / squats with the camera
+    camera: true,          // track every exercise with the camera
     readTimer: true,       // quiz unlocks only after a minimum reading time
     useShortcut: true,     // hand off to an iOS Shortcut when time is earned
     shortcutName: "Stim Unlock",
@@ -20,7 +21,7 @@ export const DEFAULTS = {
   },
   expiresAt: 0,
   log: [],                 // {t, id, cat, title, kind:"done"|"skip", min, spentMs, detail}
-  courses: { enrolled: ["finance", "history"], done: {} },
+  courses: { enrolled: ["finance", "money", "psychology", "history", "numbers", "tech"], done: {} },
   totals: {},              // reps by challenge id
   journal: [],             // {t, prompt, text}
   notes: {},               // your one-line recap of each lesson, by lesson id
@@ -53,6 +54,7 @@ export function sanitize(s) {
   x.dailyCapMin = Math.round(clamp(x.dailyCapMin, 0, 1440, 0));
   x.effort = clamp(x.effort, 0.5, 2, 1);
   x.resetHour = Math.round(clamp(x.resetHour, 0, 12, 4));
+  x.goalPerDay = Math.round(clamp(x.goalPerDay, 1, 10, 3));
   x.shortcutName = String(x.shortcutName || "Stim Unlock").slice(0, 60);
   return s;
 }
@@ -90,13 +92,32 @@ export function nextGrant(s, now = Date.now()) {
 }
 
 /** Record a finished (or skipped) challenge and add its time. Returns the log entry. */
-export function grant(s, { id, cat, title, kind = "done", spentMs = 0, detail = "" }, now = Date.now()) {
+export function grant(s, { id, cat, title, kind = "done", spentMs = 0, detail = "", bonus = 0 }, now = Date.now()) {
   const min = nextGrant(s, now);
   if (min > 0) s.expiresAt = Math.max(now, s.expiresAt) + min * MIN;
-  const entry = { t: now, id, cat, title, kind, min, spentMs: Math.round(spentMs), detail };
+  const xp = kind === "done" ? 10 + Math.max(0, Math.min(5, Math.round(bonus))) : 0;
+  const entry = { t: now, id, cat, title, kind, min, xp, spentMs: Math.round(spentMs), detail };
   s.log.push(entry);
   if (s.log.length > 3000) s.log.splice(0, s.log.length - 3000);
   return entry;
+}
+
+// ---------- xp ----------
+export const XP_PER_LEVEL = 100;
+export const xp = s => s.log.reduce((n, e) => n + (e.xp || 0), 0);
+export function level(s) { const x = xp(s); return { xp: x, level: Math.floor(x / XP_PER_LEVEL) + 1, into: x % XP_PER_LEVEL, need: XP_PER_LEVEL }; }
+export const doneCountToday = (s, now = Date.now()) => entriesOn(s, dk(s, now)).filter(e => e.kind === "done").length;
+
+/** Last n days, oldest first: { key, date, count, spentMin, earnedMin } */
+export function days(s, n = 7, now = Date.now()) {
+  const out = [], base = new Date(now - s.settings.resetHour * HOUR); base.setHours(12, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(base); d.setDate(base.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const e = entriesOn(s, key), dn = e.filter(x => x.kind === "done");
+    out.push({ key, date: d, count: dn.length, skipped: e.length > 0 && !dn.length, spentMin: Math.round(dn.reduce((a, x) => a + (x.spentMs || 0), 0) / MIN), earnedMin: e.reduce((a, x) => a + (x.min || 0), 0) });
+  }
+  return out;
 }
 
 export function relock(s) { s.expiresAt = 0; }

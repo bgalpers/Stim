@@ -9,7 +9,7 @@ Stim is the follow-up to [pushup-gate](https://github.com/bgalpers/pushup-gate).
 ## How it works
 
 1. You open a blocked app. An iOS automation checks whether you have time left. If not, it sends you to Stim.
-2. You pick a challenge. Each takes roughly four to seven minutes.
+2. You pick a challenge, or shuffle for a new set. Each takes roughly three to six minutes.
 3. When you finish, Stim adds 30 minutes and hands that number to a Shortcut, which lifts the block.
 4. When the time is up, the next app-open sends you back here.
 
@@ -19,28 +19,30 @@ Time can be banked (60 minutes by default), so you can do two challenges in a ro
 
 | Type | What you do | How it's checked |
 | --- | --- | --- |
-| **Move** | Push-ups, squats, lunges, jumping jacks, burpees, plank sets, wall sits, a bodyweight circuit, a mobility flow | Push-ups and squats are counted by the camera (on-device pose tracking, the same approach as pushup-gate). The rest use a tap counter or a guided timer that can't be skipped ahead. |
-| **Learn** | One lesson from a course: a short read, three questions, up to two questions from earlier lessons, then a one-sentence recap in your own words | The quiz unlocks after a minimum reading time. Missed questions come back until you get them right. |
-| **News** | Today's briefing (current stories) or On this day (five events from today's date) | Fill-in-the-blank and match-the-year questions built from what you just read. Once per day each. |
-| **Reset** | Five minutes of box breathing, or a 60-word journal entry from a prompt | Guided timer; word count. |
+| **Move** (20) | Push-ups, squats, lunges, jumping jacks, high knees, sit-ups, glute bridges, burpees, good mornings, squat jumps; plank, wall-sit, bridge, lunge and one-leg-balance holds; four mixed circuits; a mobility flow | **All by camera.** On-device pose tracking counts each rep and only runs the clock on a hold while you are actually in position. Circuits move from station to station on their own. |
+| **Learn** (60 lessons) | One lesson from a course: three or four short cards, three questions, up to two questions from earlier lessons, then a one-sentence recap in your own words | One thing per screen. Each card needs a few seconds before you can continue; missed questions come back until you get them right. |
+| **News** (2) | Today's briefing (current stories) or On this day (five events from today's date) | Fill-in-the-blank and match-the-year questions built from what you just read. Once per day each. |
+| **Mind** (6) | Mental math sprint, sequence memory, box breathing, and three writing prompts (journal, gratitude, planning) | Right answers, completed rounds, a guided timer, or a word count. |
 
-Courses included, six lessons each: **Finance foundations**, **The 20th century in six turns**, **How economies work**, **Habits, attention and choice**. A finished lesson can be reviewed for credit again after a week.
+**Courses** (star the ones you want in your shuffle): Finance foundations · Your money · How economies work · Thinking in numbers · Habits, attention and choice · Communication and negotiation · The 20th century in six turns · The ancient world · How the US government works · Big questions (philosophy) · Space and physics · How your body works · Computing and AI. A finished lesson can be reviewed for credit again after a week.
 
-News comes from Wikipedia's public featured-content feed, fetched by your browser when you open that challenge. It is the only network request Stim makes besides loading the pose model for the camera.
+If the camera can't be used (permission denied, no camera, tracking not working) every exercise falls back to a tap counter or a plain timer, and the result is logged as "no camera" with no bonus XP.
+
+News comes from Wikipedia's public featured-content feed, fetched by your browser when you open that challenge.
+
+## Progress
+
+Each finished challenge is worth 10 XP plus up to 5 bonus (camera-verified, first-try answers, no slips). 100 XP is a level. There is a daily goal (three challenges by default), a streak, a seven-day chart, minutes of effort against minutes of apps, lifetime rep counts, course paths and your journal.
+
+Skipping is possible. It asks three times, gives you the time, earns no XP, and marks the day as a skip.
 
 ## Settings
 
-Everything in the deal is adjustable in the Settings tab:
-
-- minutes earned per challenge (default 30), the most you can bank (60), and an optional daily limit
-- effort: Light, Standard, Hard or Max, which scales reps and timed work (25 push-ups at Standard, 50 at Max)
+- minutes earned per challenge (default 30), the most you can bank (60), an optional daily limit, and the daily goal
+- effort: Light, Standard, Hard or Max, which scales reps, holds and problem counts
 - which kinds of challenge are offered, and individual challenges on or off
-- camera counting, minimum reading time
+- camera tracking, minimum reading time
 - the name of the Shortcut to run, and what hour the day rolls over
-
-The Progress tab shows your streak (a leaf per day, a flower at a week), minutes of effort against minutes of apps for the last seven days, a breakdown by type, course progress, rep totals and your journal.
-
-Skipping is possible. It asks three times, gives you the time, and marks the day as a skip instead of a win.
 
 ## Set up the lock on iPhone
 
@@ -78,20 +80,18 @@ The check happens when a gated app is opened. iOS won't let a shortcut close an 
 
 ## Add or edit courses
 
-Courses are plain JavaScript objects in `content/`. Copy the shape in `content/courses-a.js`:
+Courses are plain JavaScript in `content/`. The compact form, from `content/courses-c.js`:
 
 ```js
-{
-  id: "fin-1", title: "The time value of money",
-  body: ["Paragraph…", "Paragraph…"],
-  takeaway: "One sentence.",
-  quiz: [{ q: "Question?", o: ["A", "B", "C", "D"], a: 1, why: "Shown after answering." }],
-}
+L("mon-1", "A budget that fits on a napkin",
+  ["Card one…", "Card two…", "Card three…"],
+  "One-sentence takeaway.",
+  [Q("Question?", "Right answer", ["Wrong", "Wrong", "Wrong"], "Shown after answering.")])
 ```
 
-Add the course to the list in `content/courses.js`. `npm test` checks that every lesson has three four-option questions with a valid answer and that the correct option isn't always in the same slot.
+Write the right answer first; options are shuffled when shown. Add the course to the list in `content/courses.js`. `npm test` checks every lesson.
 
-Fixed challenges live in `js/catalog.js`.
+Exercises live in `js/catalog.js` as lists of camera stations, and the rule for each pose (which joints, which angles) is in `js/pose.js`.
 
 ## Privacy
 
@@ -108,11 +108,17 @@ npm test        # logic, content and question-builder tests
 
 | File | What's in it |
 | --- | --- |
-| `js/store.js` | State and the rules: earning, banking, daily limit, streaks |
-| `js/catalog.js` | The fixed challenges and how effort scales them |
+| `js/store.js` | State and the rules: earning, banking, daily limit, streaks, XP |
+| `js/catalog.js` | Exercises, mind games, prompts and how effort scales them |
 | `js/app.js` | Screens and routing |
-| `js/pose.js` | Camera rep counter (MediaPipe pose) |
+| `js/pose.js` | Camera tracking: one rule per exercise (MediaPipe pose) |
 | `js/news.js` | Turns the Wikipedia feed into a read-and-quiz lesson |
 | `content/` | Courses |
 
-Not yet tested on a real phone: squat counting thresholds, and the live Wikipedia feed (the builder is tested against a sample of the feed's format).
+## What still needs a real phone
+
+The camera rules are tested against stick figures, not people. Push-ups use the thresholds from pushup-gate; every other exercise is a first estimate and will need tuning (the numbers are the `lo` / `hi` values in `js/pose.js`). The live Wikipedia feed is tested against a sample of its format.
+
+## Toward a real app
+
+This is a web app, which is why blocking goes through Shortcuts. A native iOS app could use Apple's Screen Time API (FamilyControls / ManagedSettings) to shield apps directly and lift the shield for exactly 30 minutes, which would also fix the "nothing kicks you out mid-scroll" gap. The logic in `js/store.js`, the content and the pose rules would carry over.
