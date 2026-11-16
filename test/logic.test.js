@@ -5,6 +5,7 @@ import { CHALLENGES, CATS, scaled, byId, summary, primary, PROMPTS } from "../js
 import { COURSES, wordCount } from "../content/courses.js";
 import { buildBriefing, buildOnThisDay, strip } from "../js/news.js";
 import { makeTracker, MODES } from "../js/pose.js";
+import { buddy, BASE, BASE_LABEL, options, optionName, ITEMS, SLOTS, itemById, DEFAULT } from "../js/buddy.js";
 
 const MIN = 60_000, DAY = 86_400_000;
 const T0 = new Date(2026, 10, 16, 13, 0).getTime();   // Mon 16 Nov 2026, 1 PM local
@@ -238,4 +239,28 @@ test("camera: holds only count in the right position, and losing the body is rep
   const t = makeTracker("plank"); for (let i = 0; i < 5; i++) t.feed(fig(forearm));
   for (let i = 0; i < 4; i++) t.feed(fig(stand)); assert.equal(t.feed(fig(forearm)).holding, true);
   for (let i = 0; i < 10; i++) t.feed(fig(stand)); assert.equal(t.feed(fig(stand)).holding, false);
+});
+
+test("character: every base option and every item draws, and hostile input is ignored", () => {
+  assert.equal(new Set(ITEMS.map(i => i.id)).size, ITEMS.length);
+  assert.ok(ITEMS.length >= 45, `${ITEMS.length} items`);
+  for (const slot of Object.keys(SLOTS)) assert.ok(ITEMS.filter(i => i.slot === slot).length >= 3, slot);
+  const plain = buddy(DEFAULT);
+  for (const i of ITEMS) {
+    assert.ok(i.cost >= 20 && SLOTS[i.slot], i.id);
+    const svg = buddy({ ...DEFAULT, wear: { [i.slot]: i.id } });
+    assert.ok(svg.length > plain.length - 400 && !/undefined|NaN|\[object/.test(svg), i.id);
+    assert.equal(buddy({ ...DEFAULT, wear: { wrongslot: i.id } }).replace(/bd\d+/g, ""), plain.replace(/bd\d+/g, ""), `${i.id} only draws in its own slot`);
+  }
+  let combos = 1;
+  for (const cat of Object.keys(BASE_LABEL)) {
+    const opts = options(cat); combos *= opts.length;
+    assert.ok(opts.length >= 6, `${cat} has ${opts.length}`); assert.ok(opts.includes(DEFAULT[cat]), cat);
+    for (const o of opts) { assert.ok(optionName(cat, o)); assert.ok(!/undefined|NaN/.test(buddy({ ...DEFAULT, [cat]: o })), `${cat}=${o}`); }
+  }
+  assert.ok(combos > 100000, `${combos} base combinations`);
+  const evil = buddy({ color: '"><script>x</script>', shape: "__proto__", eyes: "constructor", mouth: "<img>", mark: 5, top: "toString", wear: { head: "constructor", face: '"><svg onload=1>', bg: "hasOwnProperty" } });
+  assert.ok(!/script|onload|<img|constructor/.test(evil));
+  assert.equal(evil.replace(/bd\d+/g, ""), plain.replace(/bd\d+/g, ""), "unknown values fall back to the default look");
+  assert.equal(itemById("crown").slot, "head");
 });

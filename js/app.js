@@ -1,6 +1,6 @@
 import * as S from "./store.js";
 import { CATS, CHALLENGES, byId, scaled, summary, stationLabel, primary, PROMPTS } from "./catalog.js";
-import { buddy, COLORS, EYES, SLOTS, ITEMS, itemById, titleFor } from "./buddy.js";
+import { buddy, BASE_LABEL, options, optionName, SLOTS, ITEMS, itemById, titleFor } from "./buddy.js";
 import * as Social from "./social.js";
 import { COURSES, courseById, findLesson } from "../content/courses.js";
 import * as News from "./news.js";
@@ -797,44 +797,90 @@ function progress() {
 }
 
 // ---------- Character ----------
+// Base: swipe the character (or use the arrows) to step through the options of the selected feature.
+// Shop: tap an item to try it on; buy it with XP to keep it.
 function buddyEdit() {
-  const me = state.me;
-  const paint = (msg = "") => {
-    const y = scrollY;
-    draw(`${backBar("Your character", "#/me")}
-      <div class="buddystage" style="--c:${esc(me.color)}">${buddy(me, "big")}<span class="coins"><i>${BOLT}</i><b class="num">${S.coins(state)}</b> XP to spend</span></div>
-      ${msg ? `<p class="note">${esc(msg)}</p>` : ""}
-      <input type="text" class="text" id="bname" maxlength="24" placeholder="Name your character" value="${esc(me.name)}" autocomplete="off">
-      <h3 class="grp">Colour</h3>
-      <div class="swatches">${COLORS.map(c => `<button type="button" data-act="color" data-c="${c}" class="${me.color === c ? "on" : ""}" style="--c:${c}" aria-label="Colour ${c}"></button>`).join("")}</div>
-      <h3 class="grp">Eyes</h3>
-      <div class="seg" role="group" aria-label="Eyes">${EYES.map(e => `<button type="button" data-act="eyes" data-e="${e}" class="${me.eyes === e ? "on" : ""}">${e[0].toUpperCase() + e.slice(1)}</button>`).join("")}</div>
-      ${Object.entries(SLOTS).map(([slot, label]) => `<h3 class="grp">${label}</h3><div class="shop">${ITEMS.filter(i => i.slot === slot).map(i => {
-        const own = state.owned.includes(i.id), on = me.wear[slot] === i.id, can = S.coins(state) >= i.cost;
-        return `<button type="button" class="item${on ? " on" : ""}${own ? " own" : can ? "" : " locked"}" data-act="item" data-id="${i.id}">${buddy({ color: me.color, eyes: me.eyes, wear: { [slot]: i.id } })}<b>${i.name}</b><small class="num">${on ? "Wearing" : own ? "Owned" : `${i.cost} XP`}</small></button>`;
-      }).join("")}</div>`).join("")}`, "buddypage");
-    scrollTo(0, y);
-    $("#bname").onchange = e => { me.name = e.target.value.trim().slice(0, 24); persist(); };
+  const me = state.me, cats = Object.keys(BASE_LABEL), slots = Object.keys(SLOTS);
+  let cat = "shape", slot = "head", trying = null, note = "";
+  const shown = () => (trying ? { ...me, wear: { ...me.wear, [trying.slot]: trying.id } } : me);
+  const idx = () => Math.max(0, options(cat).indexOf(me[cat]));
+
+  draw(`${backBar("Your character", "#/me")}
+    <div class="builder" id="builder">
+      <button class="arrow" type="button" data-act="step" data-d="-1" aria-label="Previous">‹</button>
+      <div class="bstage" id="bstage"></div>
+      <button class="arrow" type="button" data-act="step" data-d="1" aria-label="Next">›</button>
+    </div>
+    <div class="bmeta"><b id="optName"></b><div class="dots" id="dots"></div><span class="mini">Swipe the character, or use the arrows</span></div>
+    <div class="chips" id="cats" role="tablist" aria-label="Feature">${cats.map(c => `<button type="button" role="tab" data-act="cat" data-c="${c}">${BASE_LABEL[c]}</button>`).join("")}</div>
+    <div class="row"><input type="text" class="text" id="bname" maxlength="24" placeholder="Name your character" value="${esc(me.name)}" autocomplete="off"><button class="chipbtn" type="button" data-act="random">🎲 Random</button></div>
+    <div class="row shophead"><h2 class="shoptitle">Shop</h2><span class="coins"><i>${BOLT}</i><b class="num" id="coins"></b> XP</span></div>
+    <div class="chips" id="slots" role="tablist" aria-label="Item type">${slots.map(k => `<button type="button" role="tab" data-act="slot" data-s="${k}">${SLOTS[k]}</button>`).join("")}</div>
+    <p class="note" id="bnote" hidden></p>
+    <div class="shop" id="shop"></div>
+    <div class="buybar" id="buybar" hidden></div>`, "buddypage");
+
+  const stage = $("#bstage");
+  const paintStage = dir => {
+    stage.innerHTML = buddy(shown(), "big");
+    if (dir && !reduceMotion) { stage.classList.remove("from-l", "from-r"); void stage.offsetWidth; stage.classList.add(dir > 0 ? "from-r" : "from-l"); }
+    const opts = options(cat);
+    $("#optName").textContent = `${BASE_LABEL[cat]}: ${optionName(cat, opts[idx()])}`;
+    $("#dots").innerHTML = opts.map((_, i) => `<i class="${i === idx() ? "on" : ""}"></i>`).join("");
+    $$("#cats button").forEach(b => { const on = b.dataset.c === cat; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
   };
+  const paintShop = () => {
+    $("#coins").textContent = S.coins(state);
+    $$("#slots button").forEach(b => { const on = b.dataset.s === slot; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+    $("#shop").innerHTML = ITEMS.filter(i => i.slot === slot).map((i, k) => {
+      const own = state.owned.includes(i.id), on = me.wear[slot] === i.id, can = S.coins(state) >= i.cost, tr = trying?.id === i.id;
+      return `<button type="button" class="item${on ? " on" : ""}${tr ? " try" : ""}${own ? " own" : can ? "" : " locked"}" style="--i:${k}" data-act="item" data-id="${i.id}">${buddy({ ...me, wear: { [slot]: i.id } })}<b>${i.name}</b><small class="num">${on ? "Wearing" : own ? "Owned" : `${i.cost} XP`}</small></button>`;
+    }).join("");
+    const n = $("#bnote"); n.hidden = !note; n.textContent = note;
+    const bar = $("#buybar"); bar.hidden = !trying;
+    if (trying) { const it = itemById(trying.id), short = it.cost - S.coins(state);
+      bar.innerHTML = `<span class="trymini">${buddy(shown())}</span><div><b>Trying on: ${it.name}</b><small>${short > 0 ? `${it.cost} XP · you need ${short} more` : `${it.cost} XP`}</small></div><button class="btn primary" type="button" data-act="buy" ${short > 0 ? "disabled" : ""}>Buy</button><button class="xbtn" type="button" data-act="untry" aria-label="Take it off">✕</button>`; }
+  };
+  const step = d => { const o = options(cat); me[cat] = o[(idx() + d + o.length) % o.length]; persist(); beep(d > 0 ? 720 : 600, 0.04, 0.07); paintStage(d); paintShop(); };
+
+  // swipe on the stage
+  let x0 = null;
+  const b = $("#builder");
+  b.addEventListener("pointerdown", e => { if (!e.target.closest(".arrow")) x0 = e.clientX; });
+  b.addEventListener("pointermove", e => { if (x0 != null) stage.style.transform = `translateX(${(e.clientX - x0) * 0.5}px)`; });
+  const end = e => { if (x0 == null) return; const dx = e.clientX - x0; x0 = null; stage.style.transform = ""; if (Math.abs(dx) > 36) step(dx < 0 ? 1 : -1); };
+  b.addEventListener("pointerup", end); b.addEventListener("pointercancel", end); b.addEventListener("pointerleave", end);
+  const onKey = e => { if (e.target.tagName === "INPUT") return; if (e.key === "ArrowLeft") step(-1); else if (e.key === "ArrowRight") step(1); };
+  document.addEventListener("keydown", onKey);
+  $("#bname").onchange = e => { me.name = e.target.value.trim().slice(0, 24); persist(); };
+
   Object.assign(acts, {
-    color(el) { me.color = el.dataset.c; persist(); paint(); },
-    eyes(el) { me.eyes = el.dataset.e; persist(); paint(); },
+    step: el => step(+el.dataset.d),
+    cat(el) { cat = el.dataset.c; beep(660, 0.03, 0.06); paintStage(); pop(stage); },
+    random() { for (const c of cats) { const o = options(c); me[c] = o[Math.floor(Math.random() * o.length)]; } persist(); good(); paintStage(1); paintShop(); },
+    slot(el) { slot = el.dataset.s; trying = trying?.slot === slot ? trying : null; note = ""; paintStage(); paintShop(); },
     item(el) {
-      const it = itemById(el.dataset.id);
-      if (state.owned.includes(it.id)) { me.wear[it.slot] === it.id ? delete me.wear[it.slot] : (me.wear[it.slot] = it.id); persist(); beep(700, 0.05, 0.08); return paint(); }
-      if (!S.buy(state, it.id, it.cost)) { bad(); shake(el); return paint(`${it.name} costs ${it.cost} XP. You need ${it.cost - S.coins(state)} more. Take less app time after a challenge to earn XP faster.`); }
-      me.wear[it.slot] = it.id; persist(); good(); confetti(); paint(`${it.name} unlocked.`);
+      const it = itemById(el.dataset.id); note = "";
+      if (state.owned.includes(it.id)) { trying = null; me.wear[it.slot] === it.id ? delete me.wear[it.slot] : (me.wear[it.slot] = it.id); persist(); beep(700, 0.05, 0.08); }
+      else { trying = trying?.id === it.id ? null : { slot: it.slot, id: it.id }; beep(560, 0.04, 0.07); }
+      paintStage(); pop(stage); paintShop();
+    },
+    untry() { trying = null; paintStage(); paintShop(); },
+    buy() {
+      const it = trying && itemById(trying.id); if (!it) return;
+      if (!S.buy(state, it.id, it.cost)) { bad(); return shake($("#buybar")); }
+      me.wear[it.slot] = it.id; trying = null; note = `${it.name} unlocked.`; persist(); good(); confetti(); paintStage(); pop(stage); paintShop();
     },
   });
-  onLeave(() => { const n = $("#bname"); if (n) me.name = n.value.trim().slice(0, 24); persist(); syncSocial(); });
-  paint();
+  onLeave(() => { document.removeEventListener("keydown", onKey); const n = $("#bname"); if (n) me.name = n.value.trim().slice(0, 24); persist(); syncSocial(); });
+  paintStage(); paintShop();
 }
 
 // ---------- Friends ----------
 const lastDone = () => [...state.log].reverse().find(e => e.kind === "done");
 function myCard(handle = state.social?.handle) {
   const lv = S.level(state), ld = lastDone();
-  return { handle, name: state.me.name || handle, avatar: { color: state.me.color, eyes: state.me.eyes, wear: state.me.wear }, xp: lv.xp, level: lv.level, streak: S.streak(state),
+  return { handle, name: state.me.name || handle, avatar: (({ name, ...look }) => look)(state.me), xp: lv.xp, level: lv.level, streak: S.streak(state),
     today: S.doneCountToday(state), week: S.stats(state).weekDone, day_key: today(), last_title: ld?.title || null, last_at: ld ? new Date(ld.t).toISOString() : null };
 }
 let lastSync = 0;

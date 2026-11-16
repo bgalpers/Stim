@@ -28,7 +28,7 @@ export const DEFAULTS = {
   totals: {},              // reps by challenge id
   journal: [],             // {t, prompt, text}
   notes: {},               // your one-line recap of each lesson, by lesson id
-  me: { name: "", color: "#5b3df5", eyes: "dot", wear: {} },   // your character
+  me: { name: "", shape: "blob", color: "#5b3df5", eyes: "dot", mouth: "smile", mark: "bolt", top: "none", wear: {} },   // your character
   owned: [],               // character items bought with XP
   spent: 0,                // XP spent on items
   social: null,            // { id, secret, handle } once you join friends

@@ -42,7 +42,12 @@ After every challenge a slider splits the reward. All the way right is the full 
 
 ## Your character
 
-XP raises your level (100 XP each) and is also what you spend. In **Me → Customise** you name your character, pick a colour and eyes for free, and buy headwear, eyewear, gear, capes, wings and auras (40 to 500 XP). Spending never lowers your level.
+XP raises your level (100 XP each) and is also what you spend. In **Me → Customise**:
+
+- **Build the base for free** by swiping the character left and right (or using the arrows) through 8 body shapes, 16 colours, 8 eye styles, 6 mouths, 6 belly marks and 8 kinds of ears: close to 300,000 combinations. A dice button rolls a random one.
+- **Shop** for 47 items across eight slots: headwear, eyewear, neckwear, gear, back, feet, auras and backdrops, from 30 to 600 XP. Tap an item to try it on before you buy.
+
+Spending never lowers your level. To add options or items, edit the tables in `js/buddy.js`.
 
 ## Friends
 
