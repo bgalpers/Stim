@@ -11,7 +11,7 @@
   --gold:#ffb020; --gold-d:#e08f00; --gold-soft:#fff2d6;
   --good:#19b86b; --good-d:#128f52; --good-soft:#dcf7e9; --bad:#ef4444; --bad-d:#cc2f2f; --bad-soft:#fde5e5;
   --shadow:0 2px 0 var(--line);
-  --sans:"Nunito",ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif;
+  --sans:"Nunito",ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
   --r:18px; --ease:cubic-bezier(.2,.9,.3,1); --spring:cubic-bezier(.3,1.6,.5,1);
   --c:var(--brand); --c-d:var(--brand-d); --c-soft:var(--brand-soft);
   color-scheme:light;
